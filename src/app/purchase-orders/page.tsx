@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
-  getPurchaseOrders, getProducts, getSuppliers, getNextPONumber,
+  getPurchaseOrdersList, getPurchaseOrder, getProducts, getSuppliers, getNextPONumber,
   createPurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
 } from "@/lib/data";
 import { generatePOPdf } from "@/lib/generate-po-pdf";
@@ -14,18 +14,24 @@ import {
 import { formatCurrency, getPOStatusColor } from "@/lib/utils";
 import type { Product, Supplier, PurchaseOrder } from "@/types/database";
 
+const PAGE_SIZE = 50;
+
 export default function PurchaseOrdersPage() {
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [createModal, setCreateModal] = useState(false);
   const [viewPO, setViewPO] = useState<PurchaseOrder | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -37,13 +43,17 @@ export default function PurchaseOrdersPage() {
 
   const load = async () => {
     try {
-      const [poData, prodData, supData] = await Promise.all([
-        getPurchaseOrders(), getProducts(), getSuppliers(),
+      const [poResult, prodData, supData] = await Promise.all([
+        getPurchaseOrdersList(PAGE_SIZE, 0),
+        getProducts(),
+        getSuppliers(),
       ]);
-      setPOs(poData);
+      setPOs(poResult.data);
+      setTotalCount(poResult.count);
       setProducts(prodData);
       setSuppliers(supData);
-    } catch {
+      setPage(0);
+    } catch (e) {
       toast.error("Failed to load data");
     } finally {
       setLoading(false);
@@ -51,9 +61,23 @@ export default function PurchaseOrdersPage() {
   };
   useEffect(() => { load(); }, []);
 
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const result = await getPurchaseOrdersList(PAGE_SIZE, nextPage * PAGE_SIZE);
+      setPOs([...pos, ...result.data]);
+      setPage(nextPage);
+    } catch {
+      toast.error("Failed to load more");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const lowStockCount = products.filter((p) => p.stock <= p.reorder_point).length;
 
-  // Get unique supplier names from POs for filter dropdown
+  // Get unique supplier names from loaded POs
   const poSupplierNames = useMemo(() => {
     const names = new Set<string>();
     pos.forEach((po) => {
@@ -62,11 +86,10 @@ export default function PurchaseOrdersPage() {
     return Array.from(names).sort();
   }, [pos]);
 
-  // Filtered and sorted POs
+  // Client-side filtering of loaded POs
   const filtered = useMemo(() => {
     let result = [...pos];
 
-    // Search by PO number
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((po) =>
@@ -75,17 +98,14 @@ export default function PurchaseOrdersPage() {
       );
     }
 
-    // Filter by supplier
     if (filterSupplier !== "all") {
       result = result.filter((po) => po.supplier?.name === filterSupplier);
     }
 
-    // Filter by status
     if (filterStatus !== "all") {
       result = result.filter((po) => po.status === filterStatus);
     }
 
-    // Filter by date range
     if (filterDateFrom) {
       result = result.filter((po) => po.created_at >= filterDateFrom);
     }
@@ -93,9 +113,7 @@ export default function PurchaseOrdersPage() {
       result = result.filter((po) => po.created_at <= filterDateTo + "T23:59:59");
     }
 
-    // Sort: newest first (default)
     result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
     return result;
   }, [pos, searchQuery, filterSupplier, filterStatus, filterDateFrom, filterDateTo]);
 
@@ -108,6 +126,21 @@ export default function PurchaseOrdersPage() {
   };
 
   const hasActiveFilters = searchQuery || filterSupplier !== "all" || filterStatus !== "all" || filterDateFrom || filterDateTo;
+  const hasMore = pos.length < totalCount;
+
+  // View PO detail - loads full PO with line items
+  const openViewPO = async (po: PurchaseOrder) => {
+    setViewLoading(true);
+    setViewPO(po); // Show modal immediately with header info
+    try {
+      const full = await getPurchaseOrder(po.id);
+      setViewPO(full);
+    } catch {
+      toast.error("Failed to load PO details");
+    } finally {
+      setViewLoading(false);
+    }
+  };
 
   const openCreate = async () => {
     const num = await getNextPONumber();
@@ -202,8 +235,10 @@ export default function PurchaseOrdersPage() {
         {/* ─── TOP BAR ──────────────────────── */}
         <div className="flex justify-between items-center mb-4">
           <div className="text-[13px] text-gray-400">
-            {filtered.length} purchase order{filtered.length !== 1 ? "s" : ""}
-            {hasActiveFilters ? ` (filtered from ${pos.length})` : ""}
+            {hasActiveFilters
+              ? `${filtered.length} matching (${totalCount} total)`
+              : `${totalCount} purchase orders`
+            }
           </div>
           <Button onClick={openCreate}>+ Create Purchase Order</Button>
         </div>
@@ -211,7 +246,6 @@ export default function PurchaseOrdersPage() {
         {/* ─── SEARCH + FILTER BAR ──────────── */}
         <div className="mb-4 flex flex-col gap-3">
           <div className="flex gap-2.5 items-center">
-            {/* Search */}
             <div className="relative flex-1 max-w-sm">
               <input
                 type="text"
@@ -225,7 +259,6 @@ export default function PurchaseOrdersPage() {
               )}
             </div>
 
-            {/* Status quick filters */}
             {(["all", "draft", "ordered", "received"] as const).map((s) => (
               <button
                 key={s}
@@ -240,7 +273,6 @@ export default function PurchaseOrdersPage() {
               </button>
             ))}
 
-            {/* Toggle advanced filters */}
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${
@@ -259,7 +291,6 @@ export default function PurchaseOrdersPage() {
             )}
           </div>
 
-          {/* Advanced filters (collapsible) */}
           {showFilters && (
             <div className="flex gap-3 items-end bg-surface-card border border-border rounded-xl px-4 py-3">
               <div className="flex-1">
@@ -299,38 +330,39 @@ export default function PurchaseOrdersPage() {
 
         {/* ─── PO LIST ──────────────────────── */}
         <div className="flex flex-col gap-3">
-          {filtered.map((po) => {
-            const total = po.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
-            return (
-              <div
-                key={po.id}
-                onClick={() => setViewPO(po)}
-                className="bg-surface-card border border-border rounded-xl px-6 py-5 cursor-pointer hover:border-border-light hover:bg-surface-hover transition-all"
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="font-bold text-sm text-gray-100 font-mono">{po.po_number}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {po.supplier?.name || "Unknown"} · {new Date(po.created_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="font-bold text-base text-gray-100">{formatCurrency(total)}</div>
-                      <div className="text-[11px] text-gray-500">
-                        {po.line_items?.length || 0} item{(po.line_items?.length || 0) !== 1 ? "s" : ""}
-                      </div>
-                    </div>
-                    <Badge color={getPOStatusColor(po.status) as any}>{po.status}</Badge>
+          {filtered.map((po) => (
+            <div
+              key={po.id}
+              onClick={() => openViewPO(po)}
+              className="bg-surface-card border border-border rounded-xl px-6 py-5 cursor-pointer hover:border-border-light hover:bg-surface-hover transition-all"
+            >
+              <div className="flex justify-between items-center">
+                <div>
+                  <div className="font-bold text-sm text-gray-100 font-mono">{po.po_number}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {po.supplier?.name || "Unknown"} · {new Date(po.created_at).toLocaleDateString()}
                   </div>
                 </div>
+                <div className="flex items-center gap-4">
+                  <Badge color={getPOStatusColor(po.status) as any}>{po.status}</Badge>
+                </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
+
+        {/* Load More button */}
+        {hasMore && !hasActiveFilters && (
+          <div className="flex justify-center mt-6">
+            <Button variant="secondary" onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? "Loading..." : `Load more (${pos.length} of ${totalCount})`}
+            </Button>
+          </div>
+        )}
+
         {filtered.length === 0 && !hasActiveFilters && <EmptyState icon="📋" title="No purchase orders" sub="Create your first PO to get started" />}
         {filtered.length === 0 && hasActiveFilters && (
-          <EmptyState icon="🔍" title="No matching POs" sub="Try adjusting your filters" />
+          <EmptyState icon="🔍" title="No matching POs" sub="Try adjusting your filters or load more POs" />
         )}
 
         {/* ─── CREATE MODAL ──────────────────── */}
@@ -402,21 +434,27 @@ export default function PurchaseOrdersPage() {
                   </div>
                 </div>
 
-                <div className="bg-[#0B0F19] rounded-xl p-4 mb-5 max-h-[300px] overflow-y-auto">
-                  {viewPO.line_items?.map((item, i) => (
-                    <div key={item.id} className={`flex justify-between py-2.5 ${i < (viewPO.line_items?.length || 1) - 1 ? "border-b border-border" : ""}`}>
-                      <div>
-                        <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
-                        <div className="text-[11px] text-gray-500">{item.product?.sku || ""} · {item.quantity} × {formatCurrency(item.unit_cost)}</div>
+                {viewLoading ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">Loading line items...</div>
+                ) : viewPO.line_items && viewPO.line_items.length > 0 ? (
+                  <div className="bg-[#0B0F19] rounded-xl p-4 mb-5 max-h-[300px] overflow-y-auto">
+                    {viewPO.line_items.map((item, i) => (
+                      <div key={item.id} className={`flex justify-between py-2.5 ${i < (viewPO.line_items?.length || 1) - 1 ? "border-b border-border" : ""}`}>
+                        <div>
+                          <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
+                          <div className="text-[11px] text-gray-500">{item.product?.sku || ""} · {item.quantity} × {formatCurrency(item.unit_cost)}</div>
+                        </div>
+                        <div className="font-bold text-sm text-gray-100">{formatCurrency(item.quantity * item.unit_cost)}</div>
                       </div>
-                      <div className="font-bold text-sm text-gray-100">{formatCurrency(item.quantity * item.unit_cost)}</div>
+                    ))}
+                    <div className="flex justify-between pt-3.5 border-t border-border-light mt-1.5">
+                      <span className="font-bold text-sm text-gray-100">Total</span>
+                      <span className="font-bold text-lg text-brand">{formatCurrency(total)}</span>
                     </div>
-                  ))}
-                  <div className="flex justify-between pt-3.5 border-t border-border-light mt-1.5">
-                    <span className="font-bold text-sm text-gray-100">Total</span>
-                    <span className="font-bold text-lg text-brand">{formatCurrency(total)}</span>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-500 text-sm mb-5">No line items</div>
+                )}
 
                 {viewPO.notes && <div className="text-xs text-gray-400 mb-4">Notes: {viewPO.notes}</div>}
 
