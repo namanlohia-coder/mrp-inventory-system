@@ -38,7 +38,7 @@ export default function InventoryPage() {
   };
   useEffect(load, []);
 
-  const categories = [...new Set(products.map((p) => p.category))];
+  const categories = Array.from(new Set(products.map((p) => p.category)));
   const lowStockCount = products.filter((p) => p.stock <= p.reorder_point).length;
 
   const filtered = products.filter((p) => {

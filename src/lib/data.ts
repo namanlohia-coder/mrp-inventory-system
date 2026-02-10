@@ -194,6 +194,17 @@ export async function receivePurchaseOrder(poId: string) {
   if (error) throw error;
 }
 
+export async function deletePurchaseOrder(poId: string) {
+  // Delete line items first (cascade should handle this, but just in case)
+  await supabase.from("po_line_items").delete().eq("po_id", poId);
+  // Delete the PO
+  const { error } = await supabase
+    .from("purchase_orders")
+    .delete()
+    .eq("id", poId);
+  if (error) throw error;
+}
+
 // ─── STOCK MOVEMENTS ─────────────────────────
 
 export async function getStockMovements(limit = 50) {

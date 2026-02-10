@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
   getPurchaseOrders, getProducts, getSuppliers, getNextPONumber,
-  createPurchaseOrder, updatePOStatus, receivePurchaseOrder,
+  createPurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
 } from "@/lib/data";
+import { generatePOPdf } from "@/lib/generate-po-pdf";
 import { Header } from "@/components/layout/Header";
 import {
   Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner,
@@ -83,7 +84,7 @@ export default function PurchaseOrdersPage() {
   const handleReceive = async (poId: string) => {
     try {
       await receivePurchaseOrder(poId);
-      toast.success("PO received — stock updated");
+      toast.success("PO received — stock updated in Inventory");
       setViewPO(null);
       load();
     } catch (err: any) {
@@ -99,6 +100,28 @@ export default function PurchaseOrdersPage() {
       load();
     } catch {
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleDelete = async (poId: string) => {
+    if (!confirm("Are you sure you want to delete this purchase order? This cannot be undone.")) return;
+    try {
+      await deletePurchaseOrder(poId);
+      toast.success("Purchase order deleted");
+      setViewPO(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete PO");
+    }
+  };
+
+  const handleExportPdf = (po: PurchaseOrder) => {
+    try {
+      generatePOPdf(po);
+      toast.success(`Exported ${po.po_number}.pdf`);
+    } catch (err) {
+      toast.error("Failed to generate PDF");
+      console.error(err);
     }
   };
 
@@ -224,7 +247,7 @@ export default function PurchaseOrdersPage() {
                     <div key={item.id} className={`flex justify-between py-2.5 ${i < (viewPO.line_items?.length || 1) - 1 ? "border-b border-border" : ""}`}>
                       <div>
                         <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
-                        <div className="text-[11px] text-gray-500">{item.quantity} × {formatCurrency(item.unit_cost)}</div>
+                        <div className="text-[11px] text-gray-500">{item.product?.sku || ""} · {item.quantity} × {formatCurrency(item.unit_cost)}</div>
                       </div>
                       <div className="font-bold text-sm text-gray-100">{formatCurrency(item.quantity * item.unit_cost)}</div>
                     </div>
@@ -237,13 +260,36 @@ export default function PurchaseOrdersPage() {
 
                 {viewPO.notes && <div className="text-xs text-gray-400 mb-4">Notes: {viewPO.notes}</div>}
 
-                <div className="flex justify-end gap-2.5">
-                  {viewPO.status === "draft" && (
-                    <Button variant="secondary" onClick={() => handleSubmitDraft(viewPO.id)}>Submit Order</Button>
-                  )}
-                  {viewPO.status === "ordered" && (
-                    <Button onClick={() => handleReceive(viewPO.id)}>✓ Mark as Received</Button>
-                  )}
+                {/* Received info */}
+                {viewPO.status === "received" && (
+                  <div className="text-xs text-emerald-400 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                    ✓ Received — items have been added to inventory
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <div className="flex gap-2">
+                    {/* Export PDF - always visible */}
+                    <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>
+                      📄 Export PDF
+                    </Button>
+
+                    {/* Delete - visible for draft and ordered POs */}
+                    {(viewPO.status === "draft" || viewPO.status === "ordered") && (
+                      <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>
+                        🗑 Delete
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2.5">
+                    {viewPO.status === "draft" && (
+                      <Button variant="secondary" onClick={() => handleSubmitDraft(viewPO.id)}>Submit Order</Button>
+                    )}
+                    {viewPO.status === "ordered" && (
+                      <Button onClick={() => handleReceive(viewPO.id)}>✓ Mark as Received</Button>
+                    )}
+                  </div>
                 </div>
               </>
             );
