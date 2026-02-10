@@ -113,20 +113,44 @@ export async function getPurchaseOrdersList(limit = 50, offset = 0) {
 }
 
 // Search POs by number or supplier name
-export async function searchPurchaseOrders(query: string, limit = 50) {
-  const { data, error } = await supabase
+export async function searchPurchaseOrders(query: string, limit = 100) {
+  // Search by PO number
+  const { data: byPO, error: e1 } = await supabase
     .from("purchase_orders")
-    .select(
-      `
-      *,
-      supplier:suppliers(id, name)
-    `
-    )
-    .or(`po_number.ilike.%${query}%`)
+    .select(`*, supplier:suppliers(id, name)`)
+    .ilike("po_number", `%${query}%`)
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) throw error;
-  return data as PurchaseOrder[];
+  if (e1) throw e1;
+
+  // Search by supplier name - get matching supplier IDs first
+  const { data: matchingSuppliers } = await supabase
+    .from("suppliers")
+    .select("id")
+    .ilike("name", `%${query}%`);
+  
+  let bySupplier: PurchaseOrder[] = [];
+  if (matchingSuppliers && matchingSuppliers.length > 0) {
+    const ids = matchingSuppliers.map(s => s.id);
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .select(`*, supplier:suppliers(id, name)`)
+      .in("supplier_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (!error && data) bySupplier = data as PurchaseOrder[];
+  }
+
+  // Merge and deduplicate
+  const seen = new Set<string>();
+  const merged: PurchaseOrder[] = [];
+  for (const po of [...(byPO || []), ...bySupplier]) {
+    if (!seen.has(po.id)) {
+      seen.add(po.id);
+      merged.push(po as PurchaseOrder);
+    }
+  }
+  return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 // Full PO with line items - only when viewing a single PO

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
-  getPurchaseOrdersList, getPurchaseOrder, getProducts, getSuppliers, getNextPONumber,
+  getPurchaseOrdersList, getPurchaseOrder, searchPurchaseOrders, getProducts, getSuppliers, getNextPONumber,
   createPurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
 } from "@/lib/data";
 import { generatePOPdf } from "@/lib/generate-po-pdf";
@@ -77,6 +77,29 @@ export default function PurchaseOrdersPage() {
 
   const lowStockCount = products.filter((p) => p.stock <= p.reorder_point).length;
 
+  // Server-side search with debounce
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<PurchaseOrder[] | null>(null);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await searchPurchaseOrders(searchQuery.trim());
+        setSearchResults(results);
+      } catch {
+        setSearchResults(null);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Get unique supplier names from loaded POs
   const poSupplierNames = useMemo(() => {
     const names = new Set<string>();
@@ -86,17 +109,9 @@ export default function PurchaseOrdersPage() {
     return Array.from(names).sort();
   }, [pos]);
 
-  // Client-side filtering of loaded POs
+  // Client-side filtering of loaded POs (or search results)
   const filtered = useMemo(() => {
-    let result = [...pos];
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((po) =>
-        po.po_number.toLowerCase().includes(q) ||
-        (po.supplier?.name || "").toLowerCase().includes(q)
-      );
-    }
+    let result = searchResults !== null ? [...searchResults] : [...pos];
 
     if (filterSupplier !== "all") {
       result = result.filter((po) => po.supplier?.name === filterSupplier);
@@ -115,7 +130,7 @@ export default function PurchaseOrdersPage() {
 
     result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return result;
-  }, [pos, searchQuery, filterSupplier, filterStatus, filterDateFrom, filterDateTo]);
+  }, [pos, searchResults, filterSupplier, filterStatus, filterDateFrom, filterDateTo]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -249,7 +264,7 @@ export default function PurchaseOrdersPage() {
             <div className="relative flex-1 max-w-sm">
               <input
                 type="text"
-                placeholder="Search PO number or supplier..."
+                placeholder="Search all POs by number or supplier..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-surface-card border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand"
