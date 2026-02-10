@@ -33,7 +33,7 @@ export async function getProduct(id: string) {
 export async function createProduct(product: Partial<Product>) {
   const { data, error } = await supabase
     .from("products")
-    .insert(product)
+    .insert(product as any)
     .select()
     .single();
   if (error) throw error;
@@ -43,7 +43,7 @@ export async function createProduct(product: Partial<Product>) {
 export async function updateProduct(id: string, updates: Partial<Product>) {
   const { data, error } = await supabase
     .from("products")
-    .update(updates)
+    .update(updates as any)
     .eq("id", id)
     .select()
     .single();
@@ -54,7 +54,7 @@ export async function updateProduct(id: string, updates: Partial<Product>) {
 export async function deleteProduct(id: string) {
   const { error } = await supabase
     .from("products")
-    .update({ is_active: false })
+    .update({ is_active: false } as any)
     .eq("id", id);
   if (error) throw error;
 }
@@ -74,7 +74,7 @@ export async function getSuppliers() {
 export async function createSupplier(supplier: Partial<Supplier>) {
   const { data, error } = await supabase
     .from("suppliers")
-    .insert(supplier)
+    .insert(supplier as any)
     .select()
     .single();
   if (error) throw error;
@@ -84,7 +84,7 @@ export async function createSupplier(supplier: Partial<Supplier>) {
 export async function updateSupplier(id: string, updates: Partial<Supplier>) {
   const { data, error } = await supabase
     .from("suppliers")
-    .update(updates)
+    .update(updates as any)
     .eq("id", id)
     .select()
     .single();
@@ -134,7 +134,6 @@ export async function getPurchaseOrder(id: string) {
 export async function getNextPONumber(): Promise<string> {
   const { data, error } = await supabase.rpc("next_po_number");
   if (error) {
-    // Fallback if function doesn't exist
     const year = new Date().getFullYear();
     const { count } = await supabase
       .from("purchase_orders")
@@ -148,7 +147,6 @@ export async function createPurchaseOrder(
   po: Partial<PurchaseOrder>,
   lineItems: { product_id: string; quantity: number; unit_cost: number }[]
 ) {
-  // Create PO
   const { data: poData, error: poError } = await supabase
     .from("purchase_orders")
     .insert({
@@ -157,12 +155,11 @@ export async function createPurchaseOrder(
       status: po.status || "draft",
       expected_date: po.expected_date,
       notes: po.notes || "",
-    })
+    } as any)
     .select()
     .single();
   if (poError) throw poError;
 
-  // Create line items
   const items = lineItems.map((item) => ({
     po_id: poData.id,
     product_id: item.product_id,
@@ -173,7 +170,7 @@ export async function createPurchaseOrder(
 
   const { error: itemsError } = await supabase
     .from("po_line_items")
-    .insert(items);
+    .insert(items as any);
   if (itemsError) throw itemsError;
 
   return poData as PurchaseOrder;
@@ -182,7 +179,7 @@ export async function createPurchaseOrder(
 export async function updatePOStatus(id: string, status: string) {
   const { error } = await supabase
     .from("purchase_orders")
-    .update({ status })
+    .update({ status } as any)
     .eq("id", id);
   if (error) throw error;
 }
@@ -195,9 +192,7 @@ export async function receivePurchaseOrder(poId: string) {
 }
 
 export async function deletePurchaseOrder(poId: string) {
-  // Delete line items first (cascade should handle this, but just in case)
   await supabase.from("po_line_items").delete().eq("po_id", poId);
-  // Delete the PO
   const { error } = await supabase
     .from("purchase_orders")
     .delete()
@@ -229,15 +224,13 @@ export async function createStockMovement(movement: {
   reference?: string;
   notes?: string;
 }) {
-  // Insert movement
   const { data, error } = await supabase
     .from("stock_movements")
-    .insert(movement)
+    .insert(movement as any)
     .select()
     .single();
   if (error) throw error;
 
-  // Update product stock
   const product = await getProduct(movement.product_id);
   let newStock = product.stock;
   if (movement.movement_type === "in") {
@@ -245,7 +238,7 @@ export async function createStockMovement(movement: {
   } else if (movement.movement_type === "out") {
     newStock = Math.max(0, newStock - movement.quantity);
   } else {
-    newStock = movement.quantity; // adjustment = set to exact value
+    newStock = movement.quantity;
   }
 
   await updateProduct(movement.product_id, { stock: newStock });
@@ -283,7 +276,7 @@ export async function getDashboardStats() {
   const lowStockItems = products.filter((p) => p.stock <= p.reorder_point);
   const pendingPOs = pos.filter((po) => po.status === "ordered");
   const draftPOs = pos.filter((po) => po.status === "draft");
-  const categories = [...new Set(products.map((p) => p.category))];
+  const categories = Array.from(new Set(products.map((p) => p.category)));
 
   return {
     products,
