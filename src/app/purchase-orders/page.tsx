@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
   getPurchaseOrders, getProducts, getSuppliers, getNextPONumber,
@@ -21,6 +21,14 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [createModal, setCreateModal] = useState(false);
   const [viewPO, setViewPO] = useState<PurchaseOrder | null>(null);
+
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterSupplier, setFilterSupplier] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   // Create form state
   const [nextNum, setNextNum] = useState("");
@@ -44,6 +52,62 @@ export default function PurchaseOrdersPage() {
   useEffect(() => { load(); }, []);
 
   const lowStockCount = products.filter((p) => p.stock <= p.reorder_point).length;
+
+  // Get unique supplier names from POs for filter dropdown
+  const poSupplierNames = useMemo(() => {
+    const names = new Set<string>();
+    pos.forEach((po) => {
+      if (po.supplier?.name) names.add(po.supplier.name);
+    });
+    return Array.from(names).sort();
+  }, [pos]);
+
+  // Filtered and sorted POs
+  const filtered = useMemo(() => {
+    let result = [...pos];
+
+    // Search by PO number
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((po) =>
+        po.po_number.toLowerCase().includes(q) ||
+        (po.supplier?.name || "").toLowerCase().includes(q)
+      );
+    }
+
+    // Filter by supplier
+    if (filterSupplier !== "all") {
+      result = result.filter((po) => po.supplier?.name === filterSupplier);
+    }
+
+    // Filter by status
+    if (filterStatus !== "all") {
+      result = result.filter((po) => po.status === filterStatus);
+    }
+
+    // Filter by date range
+    if (filterDateFrom) {
+      result = result.filter((po) => po.created_at >= filterDateFrom);
+    }
+    if (filterDateTo) {
+      result = result.filter((po) => po.created_at <= filterDateTo + "T23:59:59");
+    }
+
+    // Sort: newest first (default)
+    result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return result;
+  }, [pos, searchQuery, filterSupplier, filterStatus, filterDateFrom, filterDateTo]);
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setFilterSupplier("all");
+    setFilterStatus("all");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+  };
+
+  const hasActiveFilters = searchQuery || filterSupplier !== "all" || filterStatus !== "all" || filterDateFrom || filterDateTo;
 
   const openCreate = async () => {
     const num = await getNextPONumber();
@@ -135,14 +199,107 @@ export default function PurchaseOrdersPage() {
     <>
       <Header lowStockCount={lowStockCount} />
       <main className="flex-1 overflow-auto p-8">
-        <div className="flex justify-between mb-5">
-          <div className="text-[13px] text-gray-400">{pos.length} purchase orders</div>
+        {/* ─── TOP BAR ──────────────────────── */}
+        <div className="flex justify-between items-center mb-4">
+          <div className="text-[13px] text-gray-400">
+            {filtered.length} purchase order{filtered.length !== 1 ? "s" : ""}
+            {hasActiveFilters ? ` (filtered from ${pos.length})` : ""}
+          </div>
           <Button onClick={openCreate}>+ Create Purchase Order</Button>
         </div>
 
-        {/* PO List */}
+        {/* ─── SEARCH + FILTER BAR ──────────── */}
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex gap-2.5 items-center">
+            {/* Search */}
+            <div className="relative flex-1 max-w-sm">
+              <input
+                type="text"
+                placeholder="Search PO number or supplier..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-surface-card border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">✕</button>
+              )}
+            </div>
+
+            {/* Status quick filters */}
+            {(["all", "draft", "ordered", "received"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(filterStatus === s ? "all" : s)}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${
+                  filterStatus === s
+                    ? "bg-brand/20 border-brand text-brand"
+                    : "bg-surface-card border-border text-gray-400 hover:border-border-light"
+                }`}
+              >
+                {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+
+            {/* Toggle advanced filters */}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${
+                showFilters
+                  ? "bg-brand/20 border-brand text-brand"
+                  : "bg-surface-card border-border text-gray-400 hover:border-border-light"
+              }`}
+            >
+              ⚙ Filters
+            </button>
+
+            {hasActiveFilters && (
+              <button onClick={clearFilters} className="text-[11px] text-red-400 hover:text-red-300 underline">
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {/* Advanced filters (collapsible) */}
+          {showFilters && (
+            <div className="flex gap-3 items-end bg-surface-card border border-border rounded-xl px-4 py-3">
+              <div className="flex-1">
+                <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">Supplier</label>
+                <select
+                  value={filterSupplier}
+                  onChange={(e) => setFilterSupplier(e.target.value)}
+                  className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+                >
+                  <option value="all">All suppliers</option>
+                  {poSupplierNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">From date</label>
+                <input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={(e) => setFilterDateFrom(e.target.value)}
+                  className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">To date</label>
+                <input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={(e) => setFilterDateTo(e.target.value)}
+                  className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ─── PO LIST ──────────────────────── */}
         <div className="flex flex-col gap-3">
-          {pos.map((po) => {
+          {filtered.map((po) => {
             const total = po.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
             return (
               <div
@@ -171,7 +328,10 @@ export default function PurchaseOrdersPage() {
             );
           })}
         </div>
-        {pos.length === 0 && <EmptyState icon="📋" title="No purchase orders" sub="Create your first PO to get started" />}
+        {filtered.length === 0 && !hasActiveFilters && <EmptyState icon="📋" title="No purchase orders" sub="Create your first PO to get started" />}
+        {filtered.length === 0 && hasActiveFilters && (
+          <EmptyState icon="🔍" title="No matching POs" sub="Try adjusting your filters" />
+        )}
 
         {/* ─── CREATE MODAL ──────────────────── */}
         <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create Purchase Order" className="w-[680px]">
@@ -197,7 +357,7 @@ export default function PurchaseOrdersPage() {
                   updateLineItem(i, "productId", e.target.value);
                   if (prod) updateLineItem(i, "unitCost", String(prod.cost));
                 }}
-                options={products.map((p) => ({ value: p.id, label: p.name }))}
+                options={products.map((p) => ({ value: p.id, label: `${p.sku ? `[${p.sku}] ` : ""}${p.name}` }))}
               />
               <Input label={i === 0 ? "Qty" : undefined} type="number" value={item.qty} onChange={(e) => updateLineItem(i, "qty", e.target.value)} />
               <Input label={i === 0 ? "Unit Cost" : undefined} type="number" value={item.unitCost} onChange={(e) => updateLineItem(i, "unitCost", e.target.value)} />
@@ -242,7 +402,7 @@ export default function PurchaseOrdersPage() {
                   </div>
                 </div>
 
-                <div className="bg-[#0B0F19] rounded-xl p-4 mb-5">
+                <div className="bg-[#0B0F19] rounded-xl p-4 mb-5 max-h-[300px] overflow-y-auto">
                   {viewPO.line_items?.map((item, i) => (
                     <div key={item.id} className={`flex justify-between py-2.5 ${i < (viewPO.line_items?.length || 1) - 1 ? "border-b border-border" : ""}`}>
                       <div>
@@ -260,7 +420,6 @@ export default function PurchaseOrdersPage() {
 
                 {viewPO.notes && <div className="text-xs text-gray-400 mb-4">Notes: {viewPO.notes}</div>}
 
-                {/* Received info */}
                 {viewPO.status === "received" && (
                   <div className="text-xs text-emerald-400 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
                     ✓ Received — items have been added to inventory
@@ -269,19 +428,15 @@ export default function PurchaseOrdersPage() {
 
                 <div className="flex justify-between">
                   <div className="flex gap-2">
-                    {/* Export PDF - always visible */}
                     <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>
                       📄 Export PDF
                     </Button>
-
-                    {/* Delete - visible for draft and ordered POs */}
                     {(viewPO.status === "draft" || viewPO.status === "ordered") && (
                       <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>
                         🗑 Delete
                       </Button>
                     )}
                   </div>
-
                   <div className="flex gap-2.5">
                     {viewPO.status === "draft" && (
                       <Button variant="secondary" onClick={() => handleSubmitDraft(viewPO.id)}>Submit Order</Button>
