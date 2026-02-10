@@ -359,6 +359,12 @@ export default function PurchaseOrdersPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="font-bold text-base text-gray-100">{formatCurrency((po as any).total_amount || 0)}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {new Date(po.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
                   <Badge color={getPOStatusColor(po.status) as any}>{po.status}</Badge>
                 </div>
               </div>
