@@ -35,6 +35,7 @@ export default function PurchaseOrdersPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc">("date-desc");
 
   // Create form state
   const [nextNum, setNextNum] = useState("");
@@ -128,9 +129,19 @@ export default function PurchaseOrdersPage() {
       result = result.filter((po) => po.created_at <= filterDateTo + "T23:59:59");
     }
 
-    result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    result.sort((a, b) => {
+      const aAmount = (a as any).total_amount || 0;
+      const bAmount = (b as any).total_amount || 0;
+      switch (sortBy) {
+        case "date-desc": return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case "date-asc": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case "amount-desc": return bAmount - aAmount;
+        case "amount-asc": return aAmount - bAmount;
+        default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
     return result;
-  }, [pos, searchResults, filterSupplier, filterStatus, filterDateFrom, filterDateTo]);
+  }, [pos, searchResults, filterSupplier, filterStatus, filterDateFrom, filterDateTo, sortBy]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -298,6 +309,18 @@ export default function PurchaseOrdersPage() {
             >
               ⚙ Filters
             </button>
+
+            {/* Sort dropdown */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-surface-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-gray-400 focus:outline-none focus:border-brand"
+            >
+              <option value="date-desc">Newest first</option>
+              <option value="date-asc">Oldest first</option>
+              <option value="amount-desc">Highest amount</option>
+              <option value="amount-asc">Lowest amount</option>
+            </select>
 
             {hasActiveFilters && (
               <button onClick={clearFilters} className="text-[11px] text-red-400 hover:text-red-300 underline">
