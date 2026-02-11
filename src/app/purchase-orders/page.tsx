@@ -285,7 +285,7 @@ export default function PurchaseOrdersPage() {
               )}
             </div>
 
-            {(["all", "draft", "ordered", "received"] as const).map((s) => (
+            {(["all", "ordered", "received"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(filterStatus === s ? "all" : s)}
@@ -295,7 +295,7 @@ export default function PurchaseOrdersPage() {
                     : "bg-surface-card border-border text-gray-400 hover:border-border-light"
                 }`}
               >
-                {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                {s === "all" ? "All" : s === "ordered" ? "Open" : "Received"}
               </button>
             ))}
 
@@ -447,7 +447,7 @@ export default function PurchaseOrdersPage() {
           <div className="flex justify-between items-center mt-6">
             <div className="font-bold text-base text-gray-100">Total: {formatCurrency(lineTotal)}</div>
             <div className="flex gap-2.5">
-              <Button variant="secondary" onClick={() => savePO("draft")}>Save as Draft</Button>
+              <Button variant="secondary" onClick={() => setCreateModal(false)}>Cancel</Button>
               <Button onClick={() => savePO("ordered")}>Submit Order</Button>
             </div>
           </div>
@@ -513,16 +513,13 @@ export default function PurchaseOrdersPage() {
                     <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>
                       📄 Export PDF
                     </Button>
-                    {(viewPO.status === "draft" || viewPO.status === "ordered") && (
+                    {viewPO.status === "ordered" && (
                       <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>
                         🗑 Delete
                       </Button>
                     )}
                   </div>
                   <div className="flex gap-2.5">
-                    {viewPO.status === "draft" && (
-                      <Button variant="secondary" onClick={() => handleSubmitDraft(viewPO.id)}>Submit Order</Button>
-                    )}
                     {viewPO.status === "ordered" && (
                       <Button onClick={() => handleReceive(viewPO.id)}>✓ Mark as Received</Button>
                     )}
