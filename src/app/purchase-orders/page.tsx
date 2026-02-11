@@ -30,7 +30,7 @@ export default function PurchaseOrdersPage() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("ordered");
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -154,6 +154,11 @@ export default function PurchaseOrdersPage() {
   const hasActiveFilters = searchQuery || filterSupplier !== "all" || filterStatus !== "all" || filterDateFrom || filterDateTo;
   const hasMore = pos.length < totalCount;
 
+  // Calculate total dollar amount for filtered results
+  const filteredTotal = useMemo(() => {
+    return filtered.reduce((sum, po) => sum + ((po as any).total_amount || 0), 0);
+  }, [filtered]);
+
   // View PO detail - loads full PO with line items
   const openViewPO = async (po: PurchaseOrder) => {
     setViewLoading(true);
@@ -260,11 +265,16 @@ export default function PurchaseOrdersPage() {
       <main className="flex-1 overflow-auto p-8">
         {/* ─── TOP BAR ──────────────────────── */}
         <div className="flex justify-between items-center mb-4">
-          <div className="text-[13px] text-gray-400">
-            {hasActiveFilters
-              ? `${filtered.length} matching (${totalCount} total)`
-              : `${totalCount} purchase orders`
-            }
+          <div className="flex items-center gap-4">
+            <div className="text-[13px] text-gray-400">
+              {hasActiveFilters
+                ? `${filtered.length} matching (${totalCount} total)`
+                : `${totalCount} purchase orders`
+              }
+            </div>
+            <div className="text-[14px] font-bold text-brand">
+              {formatCurrency(filteredTotal)}
+            </div>
           </div>
           <Button onClick={openCreate}>+ Create Purchase Order</Button>
         </div>
