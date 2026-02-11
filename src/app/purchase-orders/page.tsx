@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
-  getPurchaseOrdersList, getPurchaseOrder, searchPurchaseOrders, getProducts, getSuppliers, getNextPONumber,
+  getPurchaseOrdersList, getPurchaseOrder, searchPurchaseOrders, getPurchaseOrdersTotal, getProducts, getSuppliers, getNextPONumber,
   createPurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
 } from "@/lib/data";
 import { generatePOPdf } from "@/lib/generate-po-pdf";
@@ -19,6 +19,7 @@ const PAGE_SIZE = 50;
 export default function PurchaseOrdersPage() {
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [dbTotal, setDbTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -44,13 +45,15 @@ export default function PurchaseOrdersPage() {
 
   const load = async () => {
     try {
-      const [poResult, prodData, supData] = await Promise.all([
+      const [poResult, prodData, supData, totalAmt] = await Promise.all([
         getPurchaseOrdersList(PAGE_SIZE, 0),
         getProducts(),
         getSuppliers(),
+        getPurchaseOrdersTotal(),
       ]);
       setPOs(poResult.data);
       setTotalCount(poResult.count);
+      setDbTotal(totalAmt);
       setProducts(prodData);
       setSuppliers(supData);
       setPage(0);
@@ -273,7 +276,7 @@ export default function PurchaseOrdersPage() {
               }
             </div>
             <div className="text-[14px] font-bold text-brand">
-              {formatCurrency(filteredTotal)}
+              {formatCurrency(hasActiveFilters ? filteredTotal : dbTotal)}
             </div>
           </div>
           <Button onClick={openCreate}>+ Create Purchase Order</Button>

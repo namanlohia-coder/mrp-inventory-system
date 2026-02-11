@@ -95,6 +95,16 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>) {
 
 // ─── PURCHASE ORDERS ─────────────────────────
 
+// Get total amount for all POs (or filtered)
+export async function getPurchaseOrdersTotal() {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("total_amount");
+  if (error) throw error;
+  const total = (data || []).reduce((s: number, r: any) => s + (r.total_amount || 0), 0);
+  return total;
+}
+
 // Light version - just PO headers with supplier name, no line items
 export async function getPurchaseOrdersList(limit = 50, offset = 0) {
   const { data, error, count } = await supabase
