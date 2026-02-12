@@ -285,12 +285,12 @@ export default function PurchaseOrdersPage() {
             <div className="text-[13px] text-gray-400">
               {hasActiveFilters
                 ? `${filtered.length} matching`
-                : `${totalCount} purchase orders`
+                : `${filtered.length} purchase orders`
               }
               {filterStatus === "received" ? " · Received" : " · Open"}
             </div>
             <div className="text-[14px] font-bold text-brand">
-              {formatCurrency(hasActiveFilters ? filteredTotal : dbTotal)}
+              {formatCurrency(filteredTotal)}
             </div>
           </div>
           <Button onClick={openCreate}>+ Create Purchase Order</Button>
@@ -434,9 +434,15 @@ export default function PurchaseOrdersPage() {
           </div>
         )}
 
-        {filtered.length === 0 && !hasActiveFilters && <EmptyState icon="📋" title="No purchase orders" sub="Create your first PO to get started" />}
+        {filtered.length === 0 && !hasActiveFilters && (
+          <EmptyState
+            icon={filterStatus === "ordered" ? "📦" : "📋"}
+            title={filterStatus === "ordered" ? "No open purchase orders" : "No received purchase orders"}
+            sub={filterStatus === "ordered" ? "Create a new PO to get started" : "No POs have been received yet"}
+          />
+        )}
         {filtered.length === 0 && hasActiveFilters && (
-          <EmptyState icon="🔍" title="No matching POs" sub="Try adjusting your filters or load more POs" />
+          <EmptyState icon="🔍" title="No matching POs" sub="Try adjusting your filters" />
         )}
 
         {/* ─── CREATE MODAL ──────────────────── */}
