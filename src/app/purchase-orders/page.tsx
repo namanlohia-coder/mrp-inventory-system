@@ -576,11 +576,7 @@ export default function PurchaseOrdersPage() {
         {/* ─── VIEW MODAL ────────────────────── */}
         <Modal open={!!viewPO} onClose={() => setViewPO(null)} title={`Purchase Order ${viewPO?.po_number || ""}`} className="w-[620px]">
           {viewPO && (() => {
-            // Use DB total_amount (includes shipping/additional costs from Katana)
-            // Fall back to line item sum only if total_amount is missing
-            const lineItemsSubtotal = viewPO.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
-            const total = (viewPO as any).total_amount || lineItemsSubtotal;
-            const shipping = total - lineItemsSubtotal;
+            const total = viewPO.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
             return (
               <>
                 <div className="grid grid-cols-2 gap-4 mb-6">
@@ -606,8 +602,8 @@ export default function PurchaseOrdersPage() {
                   <div className="text-center py-8 text-gray-500 text-sm">Loading line items...</div>
                 ) : viewPO.line_items && viewPO.line_items.length > 0 ? (
                   <div className="bg-[#0B0F19] rounded-xl p-4 mb-5 max-h-[300px] overflow-y-auto">
-                    {viewPO.line_items.filter((item) => item.product?.name !== "Shipping").map((item, i, arr) => (
-                      <div key={item.id} className={`flex justify-between py-2.5 ${i < arr.length - 1 ? "border-b border-border" : ""}`}>
+                    {viewPO.line_items.map((item, i) => (
+                      <div key={item.id} className={`flex justify-between py-2.5 ${i < (viewPO.line_items?.length || 1) - 1 ? "border-b border-border" : ""}`}>
                         <div>
                           <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
                           <div className="text-[11px] text-gray-500">{item.product?.sku || ""} · {item.quantity} × {formatCurrency(item.unit_cost)}</div>
@@ -615,14 +611,6 @@ export default function PurchaseOrdersPage() {
                         <div className="font-bold text-sm text-gray-100">{formatCurrency(item.quantity * item.unit_cost)}</div>
                       </div>
                     ))}
-                    {shipping > 0 && (
-                      <div className="flex justify-between py-2.5 border-t border-border">
-                        <div>
-                          <div className="font-semibold text-[13px] text-gray-100">Shipping</div>
-                        </div>
-                        <div className="font-bold text-sm text-gray-100">{formatCurrency(shipping)}</div>
-                      </div>
-                    )}
                     <div className="flex justify-between pt-3.5 border-t border-border-light mt-1.5">
                       <span className="font-bold text-sm text-gray-100">Total</span>
                       <span className="font-bold text-lg text-brand">{formatCurrency(total)}</span>
