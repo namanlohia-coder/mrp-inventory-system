@@ -324,11 +324,19 @@ export function generatePOPdf(po: PurchaseOrder) {
   doc.text("Exempt from Sales Taxes", margin, y);
   y += 4.5;
 
-  // Add PO notes if present
+  // Add PO notes if present, but strip out the tax/resale/exempt info that's already printed above
   if (po.notes) {
-    y += 2;
-    const noteLines = doc.splitTextToSize(po.notes, pageWidth - margin * 2);
-    doc.text(noteLines, margin, y);
+    let cleanNotes = po.notes
+      .replace(/Federal Tax ID:\s*[\d-]+/gi, "")
+      .replace(/Resale Certificate\s*\d+/gi, "")
+      .replace(/Exempt from Sales Taxes/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    if (cleanNotes) {
+      y += 2;
+      const noteLines = doc.splitTextToSize(cleanNotes, pageWidth - margin * 2);
+      doc.text(noteLines, margin, y);
+    }
   }
 
   // ─── FOOTER on last page ───────────────────────────
