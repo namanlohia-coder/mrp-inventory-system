@@ -142,8 +142,13 @@ export default function PurchaseOrdersPage() {
     result.sort((a, b) => {
       const aAmount = (a as any).total_amount || 0;
       const bAmount = (b as any).total_amount || 0;
-      const aDate = (a as any).received_date || a.created_at;
-      const bDate = (b as any).received_date || b.created_at;
+      // For open POs, sort by expected_date; for received, sort by received_date
+      const aDate = filterStatus === "ordered"
+        ? (a.expected_date || a.created_at)
+        : ((a as any).received_date || a.created_at);
+      const bDate = filterStatus === "ordered"
+        ? (b.expected_date || b.created_at)
+        : ((b as any).received_date || b.created_at);
       switch (sortBy) {
         case "date-desc": return new Date(bDate).getTime() - new Date(aDate).getTime();
         case "date-asc": return new Date(aDate).getTime() - new Date(bDate).getTime();
@@ -407,9 +412,9 @@ export default function PurchaseOrdersPage() {
                   <div className="text-right">
                     <div className="font-bold text-base text-gray-100">{formatCurrency((po as any).total_amount || 0)}</div>
                     <div className="text-[11px] text-gray-500">
-                      {(po as any).received_date
+                      {po.status === "received"
                         ? `Received ${fmtDate((po as any).received_date)}`
-                        : fmtDate(po.created_at)
+                        : `Expected ${fmtDate(po.expected_date)}`
                       }
                     </div>
                   </div>
