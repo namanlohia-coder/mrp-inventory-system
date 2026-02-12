@@ -16,6 +16,13 @@ import type { Product, Supplier, PurchaseOrder } from "@/types/database";
 
 const PAGE_SIZE = 50;
 
+// Fix timezone: date-only strings like "2026-02-10" are UTC, so format them in UTC
+function fmtDate(d: string | null | undefined): string {
+  if (!d) return "—";
+  const date = new Date(d);
+  return date.toLocaleDateString("en-US", { timeZone: "UTC" });
+}
+
 export default function PurchaseOrdersPage() {
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -31,7 +38,7 @@ export default function PurchaseOrdersPage() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("received");
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -151,12 +158,11 @@ export default function PurchaseOrdersPage() {
   const clearFilters = () => {
     setSearchQuery("");
     setFilterSupplier("all");
-    setFilterStatus("all");
     setFilterDateFrom("");
     setFilterDateTo("");
   };
 
-  const hasActiveFilters = searchQuery || filterSupplier !== "all" || filterStatus !== "all" || filterDateFrom || filterDateTo;
+  const hasActiveFilters = searchQuery || filterSupplier !== "all" || filterDateFrom || filterDateTo;
   const hasMore = pos.length < totalCount;
 
   // Calculate total dollar amount for filtered results
@@ -273,9 +279,10 @@ export default function PurchaseOrdersPage() {
           <div className="flex items-center gap-4">
             <div className="text-[13px] text-gray-400">
               {hasActiveFilters
-                ? `${filtered.length} matching (${totalCount} total)`
+                ? `${filtered.length} matching`
                 : `${totalCount} purchase orders`
               }
+              {filterStatus === "received" ? " · Received" : " · Open"}
             </div>
             <div className="text-[14px] font-bold text-brand">
               {formatCurrency(hasActiveFilters ? filteredTotal : dbTotal)}
@@ -300,17 +307,17 @@ export default function PurchaseOrdersPage() {
               )}
             </div>
 
-            {(["all", "ordered", "received"] as const).map((s) => (
+            {(["ordered", "received"] as const).map((s) => (
               <button
                 key={s}
-                onClick={() => setFilterStatus(filterStatus === s ? "all" : s)}
+                onClick={() => setFilterStatus(s)}
                 className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${
                   filterStatus === s
                     ? "bg-brand/20 border-brand text-brand"
                     : "bg-surface-card border-border text-gray-400 hover:border-border-light"
                 }`}
               >
-                {s === "all" ? "All" : s === "ordered" ? "Open" : "Received"}
+                {s === "ordered" ? "Open" : "Received"}
               </button>
             ))}
 
@@ -393,7 +400,7 @@ export default function PurchaseOrdersPage() {
                 <div>
                   <div className="font-bold text-sm text-gray-100 font-mono">{po.po_number}</div>
                   <div className="text-xs text-gray-400 mt-0.5">
-                    {po.supplier?.name || "Unknown"} · Created {new Date(po.created_at).toLocaleDateString()}
+                    {po.supplier?.name || "Unknown"} · Created {fmtDate(po.created_at)}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -401,8 +408,8 @@ export default function PurchaseOrdersPage() {
                     <div className="font-bold text-base text-gray-100">{formatCurrency((po as any).total_amount || 0)}</div>
                     <div className="text-[11px] text-gray-500">
                       {(po as any).received_date
-                        ? `Received ${new Date((po as any).received_date).toLocaleDateString()}`
-                        : new Date(po.created_at).toLocaleDateString()
+                        ? `Received ${fmtDate((po as any).received_date)}`
+                        : fmtDate(po.created_at)
                       }
                     </div>
                   </div>
@@ -488,11 +495,11 @@ export default function PurchaseOrdersPage() {
                   </div>
                   <div>
                     <div className="text-[11px] text-gray-500 mb-1">CREATED</div>
-                    <div className="text-[13px] text-gray-400">{new Date(viewPO.created_at).toLocaleDateString()}</div>
+                    <div className="text-[13px] text-gray-400">{fmtDate(viewPO.created_at)}</div>
                   </div>
                   <div>
                     <div className="text-[11px] text-gray-500 mb-1">EXPECTED</div>
-                    <div className="text-[13px] text-gray-400">{viewPO.expected_date ? new Date(viewPO.expected_date).toLocaleDateString() : "—"}</div>
+                    <div className="text-[13px] text-gray-400">{fmtDate(viewPO.expected_date)}</div>
                   </div>
                 </div>
 
