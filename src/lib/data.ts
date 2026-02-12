@@ -232,6 +232,7 @@ export async function createPurchaseOrder(
   po: Partial<PurchaseOrder>,
   lineItems: { product_id: string; quantity: number; unit_cost: number }[]
 ) {
+  const totalAmount = lineItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0);
   const { data: poData, error: poError } = await supabase
     .from("purchase_orders")
     .insert({
@@ -240,6 +241,7 @@ export async function createPurchaseOrder(
       status: po.status || "draft",
       expected_date: po.expected_date,
       notes: po.notes || "",
+      total_amount: totalAmount,
     } as any)
     .select()
     .single();
@@ -326,7 +328,7 @@ export async function duplicatePurchaseOrder(sourcePOId: string, newPONumber: st
       status: "ordered",
       expected_date: source.expected_date,
       notes: source.notes ? `[Duplicated from ${source.po_number}] ${source.notes}` : `Duplicated from ${source.po_number}`,
-      total_amount: source.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0,
+      total_amount: source.total_amount || source.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0,
     } as any)
     .select()
     .single();
