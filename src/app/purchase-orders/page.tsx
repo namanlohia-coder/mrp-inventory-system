@@ -55,8 +55,6 @@ export default function PurchaseOrdersPage() {
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
   const [editForm, setEditForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
   const [editLineItems, setEditLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
-  const [searchResults, setSearchResults] = useState<PurchaseOrder[] | null>(null);
-  const [searching, setSearching] = useState(false);
 
   const load = async (status?: string) => {
     const activeStatus = status || filterStatus;
