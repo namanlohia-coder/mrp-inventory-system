@@ -50,13 +50,14 @@ export default function PurchaseOrdersPage() {
   const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
   const [lineItems, setLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
 
-  const load = async () => {
+  const load = async (status?: string) => {
+    const activeStatus = status || filterStatus;
     try {
       const [poResult, prodData, supData, totalAmt] = await Promise.all([
-        getPurchaseOrdersList(PAGE_SIZE, 0),
+        getPurchaseOrdersList(PAGE_SIZE, 0, activeStatus),
         getProducts(),
         getSuppliers(),
-        getPurchaseOrdersTotal(),
+        getPurchaseOrdersTotal(activeStatus),
       ]);
       setPOs(poResult.data);
       setTotalCount(poResult.count);
@@ -72,11 +73,19 @@ export default function PurchaseOrdersPage() {
   };
   useEffect(() => { load(); }, []);
 
+  // Reload when status tab changes
+  const switchTab = (status: string) => {
+    setFilterStatus(status);
+    setPOs([]);
+    setLoading(true);
+    load(status);
+  };
+
   const loadMore = async () => {
     setLoadingMore(true);
     try {
       const nextPage = page + 1;
-      const result = await getPurchaseOrdersList(PAGE_SIZE, nextPage * PAGE_SIZE);
+      const result = await getPurchaseOrdersList(PAGE_SIZE, nextPage * PAGE_SIZE, filterStatus);
       setPOs([...pos, ...result.data]);
       setPage(nextPage);
     } catch {
@@ -126,10 +135,6 @@ export default function PurchaseOrdersPage() {
 
     if (filterSupplier !== "all") {
       result = result.filter((po) => po.supplier?.name === filterSupplier);
-    }
-
-    if (filterStatus !== "all") {
-      result = result.filter((po) => po.status === filterStatus);
     }
 
     if (filterDateFrom) {
@@ -285,12 +290,12 @@ export default function PurchaseOrdersPage() {
             <div className="text-[13px] text-gray-400">
               {hasActiveFilters
                 ? `${filtered.length} matching`
-                : `${filtered.length} purchase orders`
+                : `${totalCount} purchase orders`
               }
               {filterStatus === "received" ? " · Received" : " · Open"}
             </div>
             <div className="text-[14px] font-bold text-brand">
-              {formatCurrency(filteredTotal)}
+              {formatCurrency(hasActiveFilters ? filteredTotal : dbTotal)}
             </div>
           </div>
           <Button onClick={openCreate}>+ Create Purchase Order</Button>
@@ -315,7 +320,7 @@ export default function PurchaseOrdersPage() {
             {(["ordered", "received"] as const).map((s) => (
               <button
                 key={s}
-                onClick={() => setFilterStatus(s)}
+                onClick={() => switchTab(s)}
                 className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${
                   filterStatus === s
                     ? "bg-brand/20 border-brand text-brand"

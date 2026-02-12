@@ -95,19 +95,23 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>) {
 
 // ─── PURCHASE ORDERS ─────────────────────────
 
-// Get total amount for all POs (or filtered)
-export async function getPurchaseOrdersTotal() {
-  const { data, error } = await supabase
+// Get total amount for POs by status
+export async function getPurchaseOrdersTotal(status?: string) {
+  let query = supabase
     .from("purchase_orders")
     .select("total_amount");
+  if (status) {
+    query = query.eq("status", status);
+  }
+  const { data, error } = await query;
   if (error) throw error;
   const total = (data || []).reduce((s: number, r: any) => s + (r.total_amount || 0), 0);
   return total;
 }
 
 // Light version - just PO headers with supplier name, no line items
-export async function getPurchaseOrdersList(limit = 50, offset = 0) {
-  const { data, error, count } = await supabase
+export async function getPurchaseOrdersList(limit = 50, offset = 0, status?: string) {
+  let query = supabase
     .from("purchase_orders")
     .select(
       `
@@ -115,9 +119,20 @@ export async function getPurchaseOrdersList(limit = 50, offset = 0) {
       supplier:suppliers(id, name)
     `,
       { count: "exact" }
-    )
-    .order("received_date", { ascending: false, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+    );
+  
+  if (status) {
+    query = query.eq("status", status);
+  }
+  
+  // Sort open POs by expected_date, received POs by received_date
+  if (status === "ordered") {
+    query = query.order("expected_date", { ascending: true, nullsFirst: false });
+  } else {
+    query = query.order("received_date", { ascending: false, nullsFirst: false });
+  }
+  
+  const { data, error, count } = await query.range(offset, offset + limit - 1);
   if (error) throw error;
   return { data: data as PurchaseOrder[], count: count || 0 };
 }
