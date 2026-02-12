@@ -119,7 +119,9 @@ export function generatePOPdf(po: PurchaseOrder) {
   y += 40;
 
   // ─── LINE ITEMS TABLE ──────────────────────────────
-  const items = po.line_items || [];
+  // Filter out the dummy "Shipping" line item (qty 0, cost 0) imported from Katana
+  const allItems = po.line_items || [];
+  const items = allItems.filter((item) => item.product?.name !== "Shipping");
   const colX = {
     num: margin,
     item: margin + 8,
@@ -219,6 +221,31 @@ export function generatePOPdf(po: PurchaseOrder) {
     doc.line(margin, y - 2, pageWidth - margin, y - 2);
   });
 
+  // Use DB total_amount (includes shipping/additional costs from Katana)
+  // Fall back to line item subtotal only if total_amount is missing
+  const poTotal = (po as any).total_amount || subtotal;
+  const shipping = poTotal - subtotal;
+
+  // Shipping row (if applicable)
+  if (shipping > 0.01) {
+    checkPageBreak(14);
+    const shippingRowHeight = 14;
+    if (items.length % 2 === 1) {
+      doc.setFillColor(248, 248, 248);
+      doc.rect(margin, y - 1, pageWidth - margin * 2, shippingRowHeight, "F");
+    }
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${items.length + 1}.`, colX.num, y + 4);
+    doc.text("Shipping", colX.item, y + 4);
+    doc.text("", colX.qty, y + 4);
+    doc.text("", colX.price, y + 4);
+    doc.text(`${shipping.toFixed(2)}  USD`, colX.total, y + 4);
+    doc.text("0 %", colX.tax, y + 4);
+    doc.text(po.expected_date ? formatDate(po.expected_date) : "—", colX.arrival, y + 4);
+    y += shippingRowHeight;
+    doc.line(margin, y - 2, pageWidth - margin, y - 2);
+  }
+
   // Total with tax row
   checkPageBreak(12);
   y += 2;
@@ -228,12 +255,12 @@ export function generatePOPdf(po: PurchaseOrder) {
   doc.setFontSize(8);
   doc.setTextColor(0, 0, 0);
   doc.text("Total (with tax):", colX.total - 22, y + 3.5);
-  doc.text(`${subtotal.toFixed(2)}  USD`, colX.total + 10, y + 3.5);
+  doc.text(`${poTotal.toFixed(2)}  USD`, colX.total + 10, y + 3.5);
 
   y += 18;
 
   // ─── SUMMARY BOX ───────────────────────────────────
-  checkPageBreak(45);
+  checkPageBreak(55);
   const summaryX = 120;
   const summaryW = pageWidth - margin - summaryX;
 
@@ -253,6 +280,15 @@ export function generatePOPdf(po: PurchaseOrder) {
   doc.text("Subtotal (tax excluded):", summaryX + 3, y + 5.5);
   doc.text(`${subtotal.toFixed(2)}  USD`, summaryX + summaryW - 3, y + 5.5, { align: "right" });
 
+  if (shipping > 0.01) {
+    y += 9;
+    doc.setFillColor(245, 245, 245);
+    doc.rect(summaryX, y, summaryW, 8, "F");
+    doc.setTextColor(0, 0, 0);
+    doc.text("Plus additional costs (tax excluded):", summaryX + 3, y + 5.5);
+    doc.text(`${shipping.toFixed(2)}  USD`, summaryX + summaryW - 3, y + 5.5, { align: "right" });
+  }
+
   y += 9;
   doc.setFillColor(245, 245, 245);
   doc.rect(summaryX, y, summaryW, 8, "F");
@@ -267,7 +303,7 @@ export function generatePOPdf(po: PurchaseOrder) {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(0, 0, 0);
   doc.text("Total:", summaryX + 3, y + 6);
-  doc.text(`${subtotal.toFixed(2)}  USD`, summaryX + summaryW - 3, y + 6, { align: "right" });
+  doc.text(`${poTotal.toFixed(2)}  USD`, summaryX + summaryW - 3, y + 6, { align: "right" });
 
   y += 22;
 
@@ -303,9 +339,14 @@ export function generatePOPdf(po: PurchaseOrder) {
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  if (!dateStr) return "—";
+  // If it's a date-only string like "2026-02-10", append T00:00:00 to avoid timezone shift
+  // If it's a full timestamp like "2026-02-10T15:30:00.000Z", parse directly but show date in UTC
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+  const d = new Date(isDateOnly ? dateStr + "T00:00:00" : dateStr);
+  if (isNaN(d.getTime())) return "—";
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
