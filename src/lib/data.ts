@@ -116,7 +116,7 @@ export async function getPurchaseOrdersList(limit = 50, offset = 0) {
     `,
       { count: "exact" }
     )
-    .order("created_at", { ascending: false })
+    .order("received_date", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
   if (error) throw error;
   return { data: data as PurchaseOrder[], count: count || 0 };
@@ -129,7 +129,7 @@ export async function searchPurchaseOrders(query: string, limit = 100) {
     .from("purchase_orders")
     .select(`*, supplier:suppliers(id, name)`)
     .ilike("po_number", `%${query}%`)
-    .order("created_at", { ascending: false })
+    .order("received_date", { ascending: false, nullsFirst: false })
     .limit(limit);
   if (e1) throw e1;
 
@@ -146,7 +146,7 @@ export async function searchPurchaseOrders(query: string, limit = 100) {
       .from("purchase_orders")
       .select(`*, supplier:suppliers(id, name)`)
       .in("supplier_id", ids)
-      .order("created_at", { ascending: false })
+      .order("received_date", { ascending: false, nullsFirst: false })
       .limit(limit);
     if (!error && data) bySupplier = data as PurchaseOrder[];
   }

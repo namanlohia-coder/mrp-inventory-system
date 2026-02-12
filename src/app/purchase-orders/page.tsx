@@ -31,7 +31,7 @@ export default function PurchaseOrdersPage() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState("ordered");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -135,12 +135,14 @@ export default function PurchaseOrdersPage() {
     result.sort((a, b) => {
       const aAmount = (a as any).total_amount || 0;
       const bAmount = (b as any).total_amount || 0;
+      const aDate = (a as any).received_date || a.created_at;
+      const bDate = (b as any).received_date || b.created_at;
       switch (sortBy) {
-        case "date-desc": return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case "date-asc": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case "date-desc": return new Date(bDate).getTime() - new Date(aDate).getTime();
+        case "date-asc": return new Date(aDate).getTime() - new Date(bDate).getTime();
         case "amount-desc": return bAmount - aAmount;
         case "amount-asc": return aAmount - bAmount;
-        default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        default: return new Date(bDate).getTime() - new Date(aDate).getTime();
       }
     });
     return result;
@@ -329,8 +331,8 @@ export default function PurchaseOrdersPage() {
               onChange={(e) => setSortBy(e.target.value as any)}
               className="bg-surface-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-gray-400 focus:outline-none focus:border-brand"
             >
-              <option value="date-desc">Newest first</option>
-              <option value="date-asc">Oldest first</option>
+              <option value="date-desc">Newest received</option>
+              <option value="date-asc">Oldest received</option>
               <option value="amount-desc">Highest amount</option>
               <option value="amount-asc">Lowest amount</option>
             </select>
@@ -391,14 +393,17 @@ export default function PurchaseOrdersPage() {
                 <div>
                   <div className="font-bold text-sm text-gray-100 font-mono">{po.po_number}</div>
                   <div className="text-xs text-gray-400 mt-0.5">
-                    {po.supplier?.name || "Unknown"} · {new Date(po.created_at).toLocaleDateString()}
+                    {po.supplier?.name || "Unknown"} · Created {new Date(po.created_at).toLocaleDateString()}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <div className="font-bold text-base text-gray-100">{formatCurrency((po as any).total_amount || 0)}</div>
                     <div className="text-[11px] text-gray-500">
-                      {new Date(po.created_at).toLocaleDateString()}
+                      {(po as any).received_date
+                        ? `Received ${new Date((po as any).received_date).toLocaleDateString()}`
+                        : new Date(po.created_at).toLocaleDateString()
+                      }
                     </div>
                   </div>
                   <Badge color={getPOStatusColor(po.status) as any}>{po.status}</Badge>
