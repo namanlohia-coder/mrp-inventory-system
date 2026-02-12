@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
   getPurchaseOrdersList, getPurchaseOrder, searchPurchaseOrders, getPurchaseOrdersTotal, getProducts, getSuppliers, getNextPONumber,
-  createPurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
+  createPurchaseOrder, updatePurchaseOrder, duplicatePurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
 } from "@/lib/data";
 import { generatePOPdf } from "@/lib/generate-po-pdf";
 import { Header } from "@/components/layout/Header";
@@ -49,6 +49,14 @@ export default function PurchaseOrdersPage() {
   const [nextNum, setNextNum] = useState("");
   const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
   const [lineItems, setLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
+
+  // Edit modal state
+  const [editModal, setEditModal] = useState(false);
+  const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
+  const [editForm, setEditForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
+  const [editLineItems, setEditLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
+  const [searchResults, setSearchResults] = useState<PurchaseOrder[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   const load = async (status?: string) => {
     const activeStatus = status || filterStatus;
@@ -271,6 +279,79 @@ export default function PurchaseOrdersPage() {
     } catch (err) {
       toast.error("Failed to generate PDF");
       console.error(err);
+    }
+  };
+
+  const openEditPO = (po: PurchaseOrder) => {
+    setEditingPO(po);
+    setEditForm({
+      supplierId: po.supplier_id || "",
+      expectedDate: po.expected_date || "",
+      notes: po.notes || "",
+    });
+    setEditLineItems(
+      (po.line_items || []).map((item) => ({
+        productId: item.product_id,
+        qty: String(item.quantity),
+        unitCost: String(item.unit_cost),
+      }))
+    );
+    setViewPO(null);
+    setEditModal(true);
+  };
+
+  const addEditLineItem = () => {
+    setEditLineItems([...editLineItems, { productId: products[0]?.id || "", qty: "1", unitCost: "0" }]);
+  };
+
+  const updateEditLineItem = (idx: number, field: string, val: string) => {
+    setEditLineItems(editLineItems.map((item, i) => (i === idx ? { ...item, [field]: val } : item)));
+  };
+
+  const removeEditLineItem = (idx: number) => {
+    setEditLineItems(editLineItems.filter((_, i) => i !== idx));
+  };
+
+  const saveEdit = async () => {
+    if (!editingPO) return;
+    if (!editForm.supplierId) return toast.error("Select a supplier");
+    if (editLineItems.length === 0) return toast.error("Add at least one line item");
+    try {
+      const items = editLineItems.map((i) => ({
+        product_id: i.productId,
+        quantity: parseInt(i.qty) || 0,
+        unit_cost: parseFloat(i.unitCost) || 0,
+      }));
+      const total = items.reduce((s, i) => s + i.quantity * i.unit_cost, 0);
+      await updatePurchaseOrder(
+        editingPO.id,
+        {
+          supplier_id: editForm.supplierId,
+          expected_date: editForm.expectedDate || null,
+          notes: editForm.notes,
+          total_amount: total,
+        },
+        items
+      );
+      toast.success("Purchase order updated");
+      setEditModal(false);
+      setEditingPO(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update PO");
+    }
+  };
+
+  const handleDuplicate = async (po: PurchaseOrder) => {
+    try {
+      const newNum = await getNextPONumber();
+      await duplicatePurchaseOrder(po.id, newNum);
+      toast.success(`Duplicated as ${newNum}`);
+      setViewPO(null);
+      // Switch to Open tab since duplicated PO is "ordered"
+      switchTab("ordered");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to duplicate PO");
     }
   };
 
@@ -554,6 +635,14 @@ export default function PurchaseOrdersPage() {
                     <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>
                       📄 Export PDF
                     </Button>
+                    <Button variant="secondary" onClick={() => handleDuplicate(viewPO)}>
+                      📋 Duplicate
+                    </Button>
+                    {viewPO.status === "ordered" && (
+                      <Button variant="secondary" onClick={() => openEditPO(viewPO)}>
+                        ✏️ Edit
+                      </Button>
+                    )}
                     {viewPO.status === "ordered" && (
                       <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>
                         🗑 Delete
@@ -569,6 +658,55 @@ export default function PurchaseOrdersPage() {
               </>
             );
           })()}
+        </Modal>
+
+        {/* ─── EDIT MODAL ──────────────────── */}
+        <Modal open={editModal} onClose={() => { setEditModal(false); setEditingPO(null); }} title={`Edit ${editingPO?.po_number || ""}`} className="w-[680px]">
+          {editingPO && (
+            <>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <Select
+                  label="Supplier"
+                  value={editForm.supplierId}
+                  onChange={(e) => setEditForm({ ...editForm, supplierId: e.target.value })}
+                  options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+                />
+                <Input label="Expected Delivery" type="date" value={editForm.expectedDate} onChange={(e) => setEditForm({ ...editForm, expectedDate: e.target.value })} />
+              </div>
+
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Line Items</div>
+              {editLineItems.map((item, i) => (
+                <div key={i} className="grid grid-cols-[2fr_1fr_1fr_auto] gap-2.5 mb-2.5 items-end">
+                  <Select
+                    label={i === 0 ? "Product" : undefined}
+                    value={item.productId}
+                    onChange={(e) => {
+                      const prod = products.find((p) => p.id === e.target.value);
+                      updateEditLineItem(i, "productId", e.target.value);
+                      if (prod) updateEditLineItem(i, "unitCost", String(prod.cost));
+                    }}
+                    options={products.map((p) => ({ value: p.id, label: `${p.sku ? `[${p.sku}] ` : ""}${p.name}` }))}
+                  />
+                  <Input label={i === 0 ? "Qty" : undefined} type="number" value={item.qty} onChange={(e) => updateEditLineItem(i, "qty", e.target.value)} />
+                  <Input label={i === 0 ? "Unit Cost" : undefined} type="number" value={item.unitCost} onChange={(e) => updateEditLineItem(i, "unitCost", e.target.value)} />
+                  <Button size="sm" variant="ghost" onClick={() => removeEditLineItem(i)}>✕</Button>
+                </div>
+              ))}
+              <Button size="sm" variant="secondary" onClick={addEditLineItem} className="mb-4">+ Add Line Item</Button>
+
+              <Input label="Notes" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+
+              <div className="flex justify-between items-center mt-6">
+                <div className="font-bold text-base text-gray-100">
+                  Total: {formatCurrency(editLineItems.reduce((s, i) => s + (parseFloat(i.qty) || 0) * (parseFloat(i.unitCost) || 0), 0))}
+                </div>
+                <div className="flex gap-2.5">
+                  <Button variant="secondary" onClick={() => { setEditModal(false); setEditingPO(null); }}>Cancel</Button>
+                  <Button onClick={saveEdit}>Save Changes</Button>
+                </div>
+              </div>
+            </>
+          )}
         </Modal>
       </main>
     </>

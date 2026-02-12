@@ -283,6 +283,71 @@ export async function deletePurchaseOrder(poId: string) {
   if (error) throw error;
 }
 
+export async function updatePurchaseOrder(
+  id: string,
+  updates: { supplier_id?: string; expected_date?: string | null; notes?: string; total_amount?: number },
+  newLineItems?: { product_id: string; quantity: number; unit_cost: number }[]
+) {
+  const { error: poError } = await supabase
+    .from("purchase_orders")
+    .update(updates as any)
+    .eq("id", id);
+  if (poError) throw poError;
+
+  if (newLineItems) {
+    // Delete old line items and insert new ones
+    await supabase.from("po_line_items").delete().eq("po_id", id);
+    const items = newLineItems.map((item) => ({
+      po_id: id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_cost: item.unit_cost,
+      received_qty: 0,
+    }));
+    const { error: itemsError } = await supabase
+      .from("po_line_items")
+      .insert(items as any);
+    if (itemsError) throw itemsError;
+  }
+}
+
+export async function duplicatePurchaseOrder(sourcePOId: string, newPONumber: string) {
+  // Get the full source PO with line items
+  const source = await getPurchaseOrder(sourcePOId);
+
+  // Create new PO
+  const { data: newPO, error: poError } = await supabase
+    .from("purchase_orders")
+    .insert({
+      po_number: newPONumber,
+      supplier_id: source.supplier_id,
+      status: "ordered",
+      expected_date: source.expected_date,
+      notes: source.notes ? `[Duplicated from ${source.po_number}] ${source.notes}` : `Duplicated from ${source.po_number}`,
+      total_amount: source.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0,
+    } as any)
+    .select()
+    .single();
+  if (poError) throw poError;
+
+  // Copy line items
+  if (source.line_items && source.line_items.length > 0) {
+    const items = source.line_items.map((item) => ({
+      po_id: newPO.id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_cost: item.unit_cost,
+      received_qty: 0,
+    }));
+    const { error: itemsError } = await supabase
+      .from("po_line_items")
+      .insert(items as any);
+    if (itemsError) throw itemsError;
+  }
+
+  return newPO as PurchaseOrder;
+}
+
 // ─── STOCK MOVEMENTS ─────────────────────────
 
 export async function getStockMovements(limit = 50) {

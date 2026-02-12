@@ -22,18 +22,47 @@ export function generatePOPdf(po: PurchaseOrder) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 20;
+  const bottomMargin = 20; // Reserve space for footer
   let y = 20;
+  let pageNum = 1;
 
   // Reset text color to black
   doc.setTextColor(0, 0, 0);
 
-  // ─── TITLE ─────────────────────────────────────────────
+  // Helper: check if we need a new page
+  const checkPageBreak = (neededSpace: number) => {
+    if (y + neededSpace > pageHeight - bottomMargin) {
+      // Add footer to current page
+      addFooter(pageNum);
+      // New page
+      doc.addPage();
+      pageNum++;
+      y = 20;
+      doc.setTextColor(0, 0, 0);
+      return true;
+    }
+    return false;
+  };
+
+  const addFooter = (pNum: number) => {
+    doc.setFontSize(7);
+    doc.setTextColor(150, 150, 150);
+    doc.text(
+      `Printed on ${new Date().toISOString().split("T")[0]}`,
+      margin,
+      pageHeight - 10
+    );
+    doc.text(`${pNum}`, pageWidth - margin, pageHeight - 10, { align: "right" });
+    doc.setTextColor(0, 0, 0);
+  };
+
+  // ─── TITLE ─────────────────────────────────────────
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
   doc.text(`Purchase order: ${po.po_number}`, margin, y);
   y += 15;
 
-  // ─── SUPPLIER + PO DATES (side by side) ────────────────
+  // ─── SUPPLIER + PO DATES (side by side) ────────────
   doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(0, 0, 0);
@@ -55,7 +84,7 @@ export function generatePOPdf(po: PurchaseOrder) {
 
   y += 20;
 
-  // ─── BILL TO / SHIP TO ─────────────────────────────────
+  // ─── BILL TO / SHIP TO ─────────────────────────────
   const addressLines = [
     COMPANY.name,
     COMPANY.street,
@@ -89,7 +118,7 @@ export function generatePOPdf(po: PurchaseOrder) {
 
   y += 40;
 
-  // ─── LINE ITEMS TABLE ──────────────────────────────────
+  // ─── LINE ITEMS TABLE ──────────────────────────────
   const items = po.line_items || [];
   const colX = {
     num: margin,
@@ -101,22 +130,26 @@ export function generatePOPdf(po: PurchaseOrder) {
     arrival: 185,
   };
 
-  // Table header background
-  doc.setFillColor(230, 230, 230);
-  doc.rect(margin, y, pageWidth - margin * 2, 8, "F");
+  const drawTableHeader = () => {
+    // Table header background
+    doc.setFillColor(230, 230, 230);
+    doc.rect(margin, y, pageWidth - margin * 2, 8, "F");
 
-  // Table header text
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text("Item", colX.item, y + 5.5);
-  doc.text("Quantity", colX.qty, y + 5.5);
-  doc.text("Price per unit", colX.price, y + 5.5);
-  doc.text("Total cost", colX.total, y + 5.5);
-  doc.text("Tax", colX.tax, y + 5.5);
-  doc.text("Exp. arrival", colX.arrival, y + 5.5);
+    // Table header text
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text("Item", colX.item, y + 5.5);
+    doc.text("Quantity", colX.qty, y + 5.5);
+    doc.text("Price per unit", colX.price, y + 5.5);
+    doc.text("Total cost", colX.total, y + 5.5);
+    doc.text("Tax", colX.tax, y + 5.5);
+    doc.text("Exp. arrival", colX.arrival, y + 5.5);
 
-  y += 10;
+    y += 10;
+  };
+
+  drawTableHeader();
 
   // Table border
   doc.setDrawColor(200, 200, 200);
@@ -138,10 +171,24 @@ export function generatePOPdf(po: PurchaseOrder) {
     const sku = item.product?.sku || "";
     const unit = item.product?.unit || "pcs";
 
+    // Calculate row height
+    const itemText = sku ? `[${sku}] ${productName}` : productName;
+    const splitName = doc.splitTextToSize(itemText, 50);
+    const rowHeight = splitName.length > 1 ? 18 : 14;
+
+    // Check if we need a page break
+    if (checkPageBreak(rowHeight + 2)) {
+      drawTableHeader();
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.3);
+    }
+
     // Alternating row background
     if (i % 2 === 1) {
       doc.setFillColor(248, 248, 248);
-      doc.rect(margin, y - 1, pageWidth - margin * 2, 14, "F");
+      doc.rect(margin, y - 1, pageWidth - margin * 2, rowHeight, "F");
     }
 
     doc.setTextColor(0, 0, 0);
@@ -150,8 +197,6 @@ export function generatePOPdf(po: PurchaseOrder) {
     doc.text(`${i + 1}.`, colX.num, y + 4);
 
     // Item name (may wrap)
-    const itemText = sku ? `[${sku}] ${productName}` : productName;
-    const splitName = doc.splitTextToSize(itemText, 50);
     doc.text(splitName, colX.item, y + 4);
 
     // Quantity
@@ -170,12 +215,12 @@ export function generatePOPdf(po: PurchaseOrder) {
     doc.text(po.expected_date ? formatDate(po.expected_date) : "—", colX.arrival, y + 4);
 
     // Row bottom border
-    const rowHeight = splitName.length > 1 ? 18 : 14;
     y += rowHeight;
     doc.line(margin, y - 2, pageWidth - margin, y - 2);
   });
 
   // Total with tax row
+  checkPageBreak(12);
   y += 2;
   doc.setFillColor(240, 240, 240);
   doc.rect(colX.total - 25, y - 2, pageWidth - margin - colX.total + 25, 8, "F");
@@ -187,7 +232,8 @@ export function generatePOPdf(po: PurchaseOrder) {
 
   y += 18;
 
-  // ─── SUMMARY BOX ───────────────────────────────────────
+  // ─── SUMMARY BOX ───────────────────────────────────
+  checkPageBreak(45);
   const summaryX = 120;
   const summaryW = pageWidth - margin - summaryX;
 
@@ -225,7 +271,8 @@ export function generatePOPdf(po: PurchaseOrder) {
 
   y += 22;
 
-  // ─── ADDITIONAL INFO ───────────────────────────────────
+  // ─── ADDITIONAL INFO ───────────────────────────────
+  checkPageBreak(25);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
@@ -248,22 +295,15 @@ export function generatePOPdf(po: PurchaseOrder) {
     doc.text(noteLines, margin, y);
   }
 
-  // ─── FOOTER ────────────────────────────────────────────
-  doc.setFontSize(7);
-  doc.setTextColor(150, 150, 150);
-  doc.text(
-    `Printed on ${new Date().toISOString().split("T")[0]}`,
-    margin,
-    pageHeight - 10
-  );
-  doc.text("1/1", pageWidth - margin, pageHeight - 10, { align: "right" });
+  // ─── FOOTER on last page ───────────────────────────
+  addFooter(pageNum);
 
-  // ─── SAVE ──────────────────────────────────────────────
+  // ─── SAVE ──────────────────────────────────────────
   doc.save(`${po.po_number}.pdf`);
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + "T00:00:00");
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
