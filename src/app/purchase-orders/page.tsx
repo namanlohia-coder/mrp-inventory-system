@@ -115,7 +115,7 @@ export default function PurchaseOrdersPage() {
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const results = await searchPurchaseOrders(searchQuery.trim());
+        const results = await searchPurchaseOrders(searchQuery.trim(), 100, filterStatus);
         setSearchResults(results);
       } catch {
         setSearchResults(null);
@@ -124,7 +124,7 @@ export default function PurchaseOrdersPage() {
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, filterStatus]);
 
   // Get unique supplier names from loaded POs
   const poSupplierNames = useMemo(() => {

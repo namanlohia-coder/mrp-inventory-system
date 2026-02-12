@@ -138,14 +138,15 @@ export async function getPurchaseOrdersList(limit = 50, offset = 0, status?: str
 }
 
 // Search POs by number or supplier name
-export async function searchPurchaseOrders(query: string, limit = 100) {
+export async function searchPurchaseOrders(query: string, limit = 100, status?: string) {
   // Search by PO number
-  const { data: byPO, error: e1 } = await supabase
+  let poQuery = supabase
     .from("purchase_orders")
     .select(`*, supplier:suppliers(id, name)`)
-    .ilike("po_number", `%${query}%`)
-    .order("received_date", { ascending: false, nullsFirst: false })
-    .limit(limit);
+    .ilike("po_number", `%${query}%`);
+  if (status) poQuery = poQuery.eq("status", status);
+  poQuery = poQuery.order("received_date", { ascending: false, nullsFirst: false }).limit(limit);
+  const { data: byPO, error: e1 } = await poQuery;
   if (e1) throw e1;
 
   // Search by supplier name - get matching supplier IDs first
@@ -157,12 +158,13 @@ export async function searchPurchaseOrders(query: string, limit = 100) {
   let bySupplier: PurchaseOrder[] = [];
   if (matchingSuppliers && matchingSuppliers.length > 0) {
     const ids = matchingSuppliers.map(s => s.id);
-    const { data, error } = await supabase
+    let supQuery = supabase
       .from("purchase_orders")
       .select(`*, supplier:suppliers(id, name)`)
-      .in("supplier_id", ids)
-      .order("received_date", { ascending: false, nullsFirst: false })
-      .limit(limit);
+      .in("supplier_id", ids);
+    if (status) supQuery = supQuery.eq("status", status);
+    supQuery = supQuery.order("received_date", { ascending: false, nullsFirst: false }).limit(limit);
+    const { data, error } = await supQuery;
     if (!error && data) bySupplier = data as PurchaseOrder[];
   }
 
