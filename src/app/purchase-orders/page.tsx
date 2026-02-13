@@ -568,7 +568,7 @@ export default function PurchaseOrdersPage() {
         )}
 
         {/* ─── CREATE MODAL ──────────────────── */}
-        <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create Purchase Order" className="w-[680px]">
+        <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create Purchase Order" className="w-[90vw] max-w-[1100px]">
           <div className="text-xs text-gray-500 font-mono mb-5">{nextNum}</div>
           <div className="grid grid-cols-2 gap-4 mb-6">
             <Select
@@ -612,7 +612,7 @@ export default function PurchaseOrdersPage() {
         </Modal>
 
         {/* ─── VIEW MODAL ────────────────────── */}
-        <Modal open={!!viewPO} onClose={() => setViewPO(null)} title={`Purchase Order ${viewPO?.po_number || ""}`} className="w-[620px]">
+        <Modal open={!!viewPO} onClose={() => setViewPO(null)} title={`Purchase Order ${viewPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {viewPO && (() => {
             const lineItemsSubtotal = viewPO.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
             const total = (viewPO as any).total_amount || lineItemsSubtotal;
@@ -682,8 +682,8 @@ export default function PurchaseOrdersPage() {
                   </div>
                 )}
 
-                <div className="flex justify-between">
-                  <div className="flex gap-2">
+                <div className="flex justify-between items-center pt-2">
+                  <div className="flex gap-3">
                     <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>
                       📄 Export PDF
                     </Button>
@@ -695,13 +695,13 @@ export default function PurchaseOrdersPage() {
                         ✏️ Edit
                       </Button>
                     )}
+                  </div>
+                  <div className="flex gap-3">
                     {viewPO.status === "ordered" && (
                       <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>
                         🗑 Delete
                       </Button>
                     )}
-                  </div>
-                  <div className="flex gap-2.5">
                     {viewPO.status === "ordered" && (
                       <>
                         <Button variant="secondary" onClick={() => { setViewPO(null); openReceiveModal(viewPO); }}>📦 Partial Receive</Button>
@@ -716,7 +716,7 @@ export default function PurchaseOrdersPage() {
         </Modal>
 
         {/* ─── EDIT MODAL ──────────────────── */}
-        <Modal open={editModal} onClose={() => { setEditModal(false); setEditingPO(null); }} title={`Edit ${editingPO?.po_number || ""}`} className="w-[680px]">
+        <Modal open={editModal} onClose={() => { setEditModal(false); setEditingPO(null); }} title={`Edit ${editingPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {editingPO && (
             <>
               <div className="grid grid-cols-2 gap-4 mb-6">
@@ -765,7 +765,7 @@ export default function PurchaseOrdersPage() {
         </Modal>
 
         {/* ─── PARTIAL RECEIVE MODAL ──────────────────── */}
-        <Modal open={receiveModal} onClose={() => { setReceiveModal(false); setReceivingPO(null); }} title={`Receive Items — ${receivingPO?.po_number || ""}`} className="w-[620px]">
+        <Modal open={receiveModal} onClose={() => { setReceiveModal(false); setReceivingPO(null); }} title={`Receive Items — ${receivingPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {receivingPO && (
             <>
               <div className="text-xs text-gray-400 mb-4">Enter the quantity received for each item. Leave at 0 to skip.</div>
