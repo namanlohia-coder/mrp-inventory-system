@@ -137,7 +137,7 @@ export async function getPurchaseOrdersList(limit = 50, offset = 0, status?: str
   return { data: data as PurchaseOrder[], count: count || 0 };
 }
 
-// Search POs by number or supplier name
+// Search POs by number, supplier name, product name, or SKU
 export async function searchPurchaseOrders(query: string, limit = 100, status?: string) {
   // Search by PO number
   let poQuery = supabase
@@ -168,10 +168,36 @@ export async function searchPurchaseOrders(query: string, limit = 100, status?: 
     if (!error && data) bySupplier = data as PurchaseOrder[];
   }
 
+  // Search by product name or SKU in line items
+  const { data: matchingProducts } = await supabase
+    .from("products")
+    .select("id")
+    .or(`name.ilike.%${query}%,sku.ilike.%${query}%`);
+
+  let byProduct: PurchaseOrder[] = [];
+  if (matchingProducts && matchingProducts.length > 0) {
+    const productIds = matchingProducts.map(p => p.id);
+    const { data: lineItems } = await supabase
+      .from("po_line_items")
+      .select("purchase_order_id")
+      .in("product_id", productIds);
+    if (lineItems && lineItems.length > 0) {
+      const poIds = [...new Set(lineItems.map(li => li.purchase_order_id))];
+      let prodQuery = supabase
+        .from("purchase_orders")
+        .select(`*, supplier:suppliers(id, name)`)
+        .in("id", poIds);
+      if (status) prodQuery = prodQuery.eq("status", status);
+      prodQuery = prodQuery.order("received_date", { ascending: false, nullsFirst: false }).limit(limit);
+      const { data, error } = await prodQuery;
+      if (!error && data) byProduct = data as PurchaseOrder[];
+    }
+  }
+
   // Merge and deduplicate
   const seen = new Set<string>();
   const merged: PurchaseOrder[] = [];
-  for (const po of [...(byPO || []), ...bySupplier]) {
+  for (const po of [...(byPO || []), ...bySupplier, ...byProduct]) {
     if (!seen.has(po.id)) {
       seen.add(po.id);
       merged.push(po as PurchaseOrder);
@@ -217,15 +243,35 @@ export async function getPurchaseOrders() {
 }
 
 export async function getNextPONumber(): Promise<string> {
-  const { data, error } = await supabase.rpc("next_po_number");
-  if (error) {
-    const year = new Date().getFullYear();
-    const { count } = await supabase
-      .from("purchase_orders")
-      .select("*", { count: "exact", head: true });
-    return `PO-${year}-${String((count || 0) + 1).padStart(4, "0")}`;
+  // Match Katana format: PO-1408, PO-1409, etc.
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("po_number")
+    .ilike("po_number", "PO-%")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error || !data || data.length === 0) return "PO-1001";
+
+  let maxNum = 0;
+  for (const row of data) {
+    // Extract the number from PO-XXXX (ignore anything after like " - for TCI")
+    const match = row.po_number.match(/^PO-(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
   }
-  return data as string;
+  return `PO-${maxNum + 1}`;
+}
+
+export async function checkExistingPONumbers(poNumbers: string[]): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("po_number")
+    .in("po_number", poNumbers);
+  if (error) return [];
+  return (data || []).map((r) => r.po_number);
 }
 
 export async function createPurchaseOrder(

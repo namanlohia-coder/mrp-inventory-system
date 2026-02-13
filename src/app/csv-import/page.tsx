@@ -10,6 +10,7 @@ import {
   findOrCreateProduct,
   findOrCreateSupplier,
   createPurchaseOrder,
+  checkExistingPONumbers,
 } from "@/lib/data";
 import { formatCurrency } from "@/lib/utils";
 
@@ -139,6 +140,7 @@ export default function CSVImportPage() {
   const [dragOver, setDragOver] = useState(false);
   const [parsedPOs, setParsedPOs] = useState<ParsedPO[]>([]);
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
+  const [duplicatePOs, setDuplicatePOs] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importResults, setImportResults] = useState<{ po: string; success: boolean; error?: string }[]>([]);
@@ -149,7 +151,19 @@ export default function CSVImportPage() {
     try {
       const results = parseKatanaCSV(text);
       setParsedPOs(results);
-      setSelectedPOs(new Set(results.map((p) => p.poNumber)));
+      
+      // Check for duplicates
+      const poNumbers = results.map((p) => p.poNumber);
+      const existing = await checkExistingPONumbers(poNumbers);
+      const dupes = new Set(existing);
+      setDuplicatePOs(dupes);
+      
+      // Auto-select only non-duplicate POs
+      setSelectedPOs(new Set(results.filter((p) => !dupes.has(p.poNumber)).map((p) => p.poNumber)));
+      
+      if (dupes.size > 0) {
+        toast.error(`${dupes.size} PO(s) already exist in the system`);
+      }
       toast.success(`Parsed ${results.length} purchase orders`);
     } catch (err: any) {
       toast.error(err.message || "Failed to parse CSV");
@@ -245,6 +259,7 @@ export default function CSVImportPage() {
   const reset = () => {
     setParsedPOs([]);
     setSelectedPOs(new Set());
+    setDuplicatePOs(new Set());
     setImportResults([]);
     setImportProgress(0);
     setExpandedPO(null);
@@ -365,6 +380,9 @@ export default function CSVImportPage() {
                       <div className="font-bold text-sm text-gray-100 font-mono">{po.poNumber}</div>
                       <div className="text-[11px] text-gray-400">
                         {po.supplierName} · {po.lineItems.length} items · Expected {po.expectedDate || "—"}
+                        {duplicatePOs.has(po.poNumber) && (
+                          <span className="ml-2 text-amber-400 font-semibold">⚠ Already exists</span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">

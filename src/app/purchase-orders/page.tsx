@@ -191,6 +191,36 @@ export default function PurchaseOrdersPage() {
     return filtered.reduce((sum, po) => sum + ((po as any).total_amount || 0), 0);
   }, [filtered]);
 
+  // Export current filtered view as CSV
+  const exportCSV = () => {
+    const rows = filtered.map((po) => ({
+      "PO Number": po.po_number,
+      "Supplier": po.supplier?.name || "",
+      "Status": po.status,
+      "Created Date": po.created_at?.split("T")[0] || "",
+      "Expected Date": po.expected_date || "",
+      "Received Date": (po as any).received_date || "",
+      "Total Amount": (po as any).total_amount || 0,
+    }));
+    if (rows.length === 0) return toast.error("No POs to export");
+    const headers = Object.keys(rows[0]);
+    const csv = [
+      headers.join(","),
+      ...rows.map((r) => headers.map((h) => {
+        const val = (r as any)[h];
+        return typeof val === "string" && val.includes(",") ? `"${val}"` : val;
+      }).join(","))
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `PurchaseOrders-${filterStatus}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length} POs`);
+  };
+
   // View PO detail - loads full PO with line items
   const openViewPO = async (po: PurchaseOrder) => {
     setViewLoading(true);
@@ -415,7 +445,10 @@ export default function PurchaseOrdersPage() {
               {formatCurrency(hasActiveFilters ? filteredTotal : dbTotal)}
             </div>
           </div>
-          <Button onClick={openCreate}>+ Create Purchase Order</Button>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={exportCSV}>📥 Export CSV</Button>
+            <Button onClick={openCreate}>+ Create Purchase Order</Button>
+          </div>
         </div>
 
         {/* ─── SEARCH + FILTER BAR ──────────── */}
@@ -424,7 +457,7 @@ export default function PurchaseOrdersPage() {
             <div className="relative flex-1 max-w-sm">
               <input
                 type="text"
-                placeholder="Search all POs by number or supplier..."
+                placeholder="Search by PO#, supplier, product, or SKU..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-surface-card border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand"
@@ -465,8 +498,8 @@ export default function PurchaseOrdersPage() {
               onChange={(e) => setSortBy(e.target.value as any)}
               className="bg-surface-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-gray-400 focus:outline-none focus:border-brand"
             >
-              <option value="date-desc">Newest received</option>
-              <option value="date-asc">Oldest received</option>
+              <option value="date-desc">{filterStatus === "ordered" ? "Latest expected" : "Newest received"}</option>
+              <option value="date-asc">{filterStatus === "ordered" ? "Earliest expected" : "Oldest received"}</option>
               <option value="amount-desc">Highest amount</option>
               <option value="amount-asc">Lowest amount</option>
             </select>
