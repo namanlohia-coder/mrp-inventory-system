@@ -37,6 +37,7 @@ export function getPOStatusColor(status: string) {
     draft: "default",
     ordered: "blue",
     partial: "orange",
+    partially_received: "orange",
     received: "green",
     cancelled: "red",
   };
