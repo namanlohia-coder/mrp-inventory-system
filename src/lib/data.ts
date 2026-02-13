@@ -232,6 +232,7 @@ export async function createPurchaseOrder(
   po: Partial<PurchaseOrder>,
   lineItems: { product_id: string; quantity: number; unit_cost: number }[]
 ) {
+  const totalAmount = lineItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0);
   const { data: poData, error: poError } = await supabase
     .from("purchase_orders")
     .insert({
@@ -240,6 +241,7 @@ export async function createPurchaseOrder(
       status: po.status || "draft",
       expected_date: po.expected_date,
       notes: po.notes || "",
+      total_amount: totalAmount,
     } as any)
     .select()
     .single();
@@ -326,7 +328,7 @@ export async function duplicatePurchaseOrder(sourcePOId: string, newPONumber: st
       status: "ordered",
       expected_date: source.expected_date,
       notes: source.notes ? `[Duplicated from ${source.po_number}] ${source.notes}` : `Duplicated from ${source.po_number}`,
-      total_amount: source.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0,
+      total_amount: source.total_amount || source.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0,
     } as any)
     .select()
     .single();
@@ -452,5 +454,147 @@ export async function getDashboardStats() {
     draftPOs: { length: draftCount || 0 },
     totalPOs: totalPOs || 0,
     categories,
+  };
+}
+
+// ─── PARTIAL RECEIVING ──────────────────────────
+
+export async function partialReceivePO(
+  poId: string,
+  receivedItems: { line_item_id: string; product_id: string; received_qty: number }[]
+) {
+  // Update received_qty on each line item
+  for (const item of receivedItems) {
+    if (item.received_qty <= 0) continue;
+
+    // Get current line item
+    const { data: lineItem, error: liErr } = await supabase
+      .from("po_line_items")
+      .select("received_qty, quantity")
+      .eq("id", item.line_item_id)
+      .single();
+    if (liErr) throw liErr;
+
+    const newReceivedQty = (lineItem.received_qty || 0) + item.received_qty;
+
+    // Update line item received_qty
+    const { error: updateErr } = await supabase
+      .from("po_line_items")
+      .update({ received_qty: newReceivedQty } as any)
+      .eq("id", item.line_item_id);
+    if (updateErr) throw updateErr;
+
+    // Update product stock
+    const product = await getProduct(item.product_id);
+    await updateProduct(item.product_id, { stock: product.stock + item.received_qty });
+
+    // Create stock movement
+    await supabase.from("stock_movements").insert({
+      product_id: item.product_id,
+      movement_type: "in",
+      quantity: item.received_qty,
+      reference: `PO partial receive`,
+      notes: `Partial receive from PO ${poId}`,
+    } as any);
+  }
+
+  // Check if all items are fully received
+  const { data: allItems, error: allErr } = await supabase
+    .from("po_line_items")
+    .select("quantity, received_qty")
+    .eq("po_id", poId);
+  if (allErr) throw allErr;
+
+  const allFullyReceived = (allItems || []).every(
+    (item) => (item.received_qty || 0) >= item.quantity
+  );
+
+  if (allFullyReceived) {
+    // Mark PO as fully received
+    await supabase
+      .from("purchase_orders")
+      .update({ status: "received", received_date: new Date().toISOString().split("T")[0] } as any)
+      .eq("id", poId);
+  } else {
+    // Mark as partially_received
+    await supabase
+      .from("purchase_orders")
+      .update({ status: "partially_received" } as any)
+      .eq("id", poId);
+  }
+}
+
+// ─── CSV IMPORT ─────────────────────────────────
+
+export async function findOrCreateProduct(name: string, sku: string, unitCost: number): Promise<string> {
+  // Try to find by SKU first
+  if (sku) {
+    const { data: existing } = await supabase
+      .from("products")
+      .select("id")
+      .eq("sku", sku)
+      .eq("is_active", true)
+      .limit(1);
+    if (existing && existing.length > 0) return existing[0].id;
+  }
+
+  // Try to find by name
+  const { data: byName } = await supabase
+    .from("products")
+    .select("id")
+    .eq("name", name)
+    .eq("is_active", true)
+    .limit(1);
+  if (byName && byName.length > 0) return byName[0].id;
+
+  // Create new product
+  const product = await createProduct({
+    name,
+    sku: sku || "",
+    category: "Imported",
+    unit: "pcs",
+    stock: 0,
+    cost: unitCost,
+    reorder_point: 0,
+  } as any);
+  return product.id;
+}
+
+export async function findOrCreateSupplier(name: string): Promise<string> {
+  const { data: existing } = await supabase
+    .from("suppliers")
+    .select("id")
+    .ilike("name", name)
+    .eq("is_active", true)
+    .limit(1);
+  if (existing && existing.length > 0) return existing[0].id;
+
+  const supplier = await createSupplier({
+    name,
+    contact_name: "",
+    email: "",
+    phone: "",
+    address: "",
+  } as any);
+  return supplier.id;
+}
+
+// ─── REPORTS ────────────────────────────────────
+
+export async function getReportData() {
+  // Get all received POs with supplier info
+  const { data: receivedPOs, error: poErr } = await supabase
+    .from("purchase_orders")
+    .select(`*, supplier:suppliers(id, name)`)
+    .eq("status", "received")
+    .order("received_date", { ascending: true });
+  if (poErr) throw poErr;
+
+  // Get all products for inventory valuation
+  const products = await getProducts();
+
+  return {
+    receivedPOs: receivedPOs || [],
+    products,
   };
 }
