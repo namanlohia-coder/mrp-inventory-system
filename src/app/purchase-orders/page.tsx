@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
   getPurchaseOrdersList, getPurchaseOrder, searchPurchaseOrders, getPurchaseOrdersTotal, getProducts, getSuppliers, getNextPONumber,
-  createPurchaseOrder, updatePurchaseOrder, duplicatePurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder,
+  createPurchaseOrder, updatePurchaseOrder, duplicatePurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder, partialReceivePO,
 } from "@/lib/data";
 import { generatePOPdf } from "@/lib/generate-po-pdf";
 import { Header } from "@/components/layout/Header";
@@ -38,7 +38,7 @@ export default function PurchaseOrdersPage() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState("ordered");
+  const [filterStatus, setFilterStatus] = useState("ordered,partially_received");
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -55,6 +55,11 @@ export default function PurchaseOrdersPage() {
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
   const [editForm, setEditForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
   const [editLineItems, setEditLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
+
+  // Partial receive state
+  const [receiveModal, setReceiveModal] = useState(false);
+  const [receivePO, setReceivePO] = useState<PurchaseOrder | null>(null);
+  const [receiveQtys, setReceiveQtys] = useState<Record<string, string>>({});
 
   const load = async (status?: string) => {
     const activeStatus = status || filterStatus;
@@ -154,10 +159,10 @@ export default function PurchaseOrdersPage() {
       const aAmount = (a as any).total_amount || 0;
       const bAmount = (b as any).total_amount || 0;
       // For open POs, sort by expected_date; for received, sort by received_date
-      const aDate = filterStatus === "ordered"
+      const aDate = filterStatus.includes("ordered")
         ? (a.expected_date || a.created_at)
         : ((a as any).received_date || a.created_at);
-      const bDate = filterStatus === "ordered"
+      const bDate = filterStatus.includes("ordered")
         ? (b.expected_date || b.created_at)
         : ((b as any).received_date || b.created_at);
       switch (sortBy) {
@@ -236,10 +241,44 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const handleReceive = async (poId: string) => {
+  const openReceiveModal = (po: PurchaseOrder) => {
+    setReceivePO(po);
+    // Pre-fill with remaining quantities
+    const qtys: Record<string, string> = {};
+    (po.line_items || []).forEach((item) => {
+      const remaining = item.quantity - (item.received_qty || 0);
+      qtys[item.id] = remaining > 0 ? String(remaining) : "0";
+    });
+    setReceiveQtys(qtys);
+    setReceiveModal(true);
+  };
+
+  const handlePartialReceive = async () => {
+    if (!receivePO) return;
+    try {
+      const items = (receivePO.line_items || [])
+        .map((item) => ({
+          line_item_id: item.id,
+          product_id: item.product_id,
+          received_qty: parseInt(receiveQtys[item.id] || "0") || 0,
+        }))
+        .filter((i) => i.received_qty > 0);
+      if (items.length === 0) return toast.error("Enter quantities to receive");
+      await partialReceivePO(receivePO.id, items);
+      toast.success("Items received — stock updated");
+      setReceiveModal(false);
+      setReceivePO(null);
+      setViewPO(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to receive items");
+    }
+  };
+
+  const handleReceiveAll = async (poId: string) => {
     try {
       await receivePurchaseOrder(poId);
-      toast.success("PO received — stock updated in Inventory");
+      toast.success("PO fully received — stock updated in Inventory");
       setViewPO(null);
       load();
     } catch (err: any) {
@@ -396,7 +435,7 @@ export default function PurchaseOrdersPage() {
               )}
             </div>
 
-            {(["ordered", "received"] as const).map((s) => (
+            {([["ordered,partially_received", "Open"], ["received", "Received"]] as const).map(([s, label]) => (
               <button
                 key={s}
                 onClick={() => switchTab(s)}
@@ -406,7 +445,7 @@ export default function PurchaseOrdersPage() {
                     : "bg-surface-card border-border text-gray-400 hover:border-border-light"
                 }`}
               >
-                {s === "ordered" ? "Open" : "Received"}
+                {label}
               </button>
             ))}
 
@@ -520,9 +559,9 @@ export default function PurchaseOrdersPage() {
 
         {filtered.length === 0 && !hasActiveFilters && (
           <EmptyState
-            icon={filterStatus === "ordered" ? "📦" : "📋"}
-            title={filterStatus === "ordered" ? "No open purchase orders" : "No received purchase orders"}
-            sub={filterStatus === "ordered" ? "Create a new PO to get started" : "No POs have been received yet"}
+            icon={filterStatus.includes("ordered") ? "📦" : "📋"}
+            title={filterStatus.includes("ordered") ? "No open purchase orders" : "No received purchase orders"}
+            sub={filterStatus.includes("ordered") ? "Create a new PO to get started" : "No POs have been received yet"}
           />
         )}
         {filtered.length === 0 && hasActiveFilters && (
@@ -576,7 +615,11 @@ export default function PurchaseOrdersPage() {
         {/* ─── VIEW MODAL ────────────────────── */}
         <Modal open={!!viewPO} onClose={() => setViewPO(null)} title={`Purchase Order ${viewPO?.po_number || ""}`} className="w-[620px]">
           {viewPO && (() => {
-            const total = viewPO.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
+            // Use DB total_amount (includes shipping/additional costs from Katana)
+            // Fall back to line item sum only if total_amount is missing
+            const lineItemsSubtotal = viewPO.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
+            const total = (viewPO as any).total_amount || lineItemsSubtotal;
+            const shipping = total - lineItemsSubtotal;
             return (
               <>
                 <div className="grid grid-cols-2 gap-4 mb-6">
@@ -602,15 +645,31 @@ export default function PurchaseOrdersPage() {
                   <div className="text-center py-8 text-gray-500 text-sm">Loading line items...</div>
                 ) : viewPO.line_items && viewPO.line_items.length > 0 ? (
                   <div className="bg-[#0B0F19] rounded-xl p-4 mb-5 max-h-[300px] overflow-y-auto">
-                    {viewPO.line_items.map((item, i) => (
-                      <div key={item.id} className={`flex justify-between py-2.5 ${i < (viewPO.line_items?.length || 1) - 1 ? "border-b border-border" : ""}`}>
+                    {viewPO.line_items.filter((item) => item.product?.name !== "Shipping").map((item, i, arr) => (
+                      <div key={item.id} className={`flex justify-between py-2.5 ${i < arr.length - 1 ? "border-b border-border" : ""}`}>
                         <div>
                           <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
-                          <div className="text-[11px] text-gray-500">{item.product?.sku || ""} · {item.quantity} × {formatCurrency(item.unit_cost)}</div>
+                          <div className="text-[11px] text-gray-500">
+                            {item.product?.sku || ""} · {item.quantity} × {formatCurrency(item.unit_cost)}
+                            {(item.received_qty || 0) > 0 && (item.received_qty || 0) < item.quantity && (
+                              <span className="ml-2 text-amber-400">({item.received_qty}/{item.quantity} received)</span>
+                            )}
+                            {(item.received_qty || 0) >= item.quantity && (
+                              <span className="ml-2 text-emerald-400">✓ received</span>
+                            )}
+                          </div>
                         </div>
                         <div className="font-bold text-sm text-gray-100">{formatCurrency(item.quantity * item.unit_cost)}</div>
                       </div>
                     ))}
+                    {shipping > 0 && (
+                      <div className="flex justify-between py-2.5 border-t border-border">
+                        <div>
+                          <div className="font-semibold text-[13px] text-gray-100">Shipping</div>
+                        </div>
+                        <div className="font-bold text-sm text-gray-100">{formatCurrency(shipping)}</div>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-3.5 border-t border-border-light mt-1.5">
                       <span className="font-bold text-sm text-gray-100">Total</span>
                       <span className="font-bold text-lg text-brand">{formatCurrency(total)}</span>
@@ -624,7 +683,12 @@ export default function PurchaseOrdersPage() {
 
                 {viewPO.status === "received" && (
                   <div className="text-xs text-emerald-400 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
-                    ✓ Received — items have been added to inventory
+                    ✓ Fully Received — all items have been added to inventory
+                  </div>
+                )}
+                {viewPO.status === "partially_received" && (
+                  <div className="text-xs text-amber-400 mb-4 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                    ⏳ Partially Received — some items still pending
                   </div>
                 )}
 
@@ -636,20 +700,23 @@ export default function PurchaseOrdersPage() {
                     <Button variant="secondary" onClick={() => handleDuplicate(viewPO)}>
                       📋 Duplicate
                     </Button>
-                    {viewPO.status === "ordered" && (
+                    {(viewPO.status === "ordered" || viewPO.status === "partially_received") && (
                       <Button variant="secondary" onClick={() => openEditPO(viewPO)}>
                         ✏️ Edit
                       </Button>
                     )}
-                    {viewPO.status === "ordered" && (
+                    {(viewPO.status === "ordered" || viewPO.status === "partially_received") && (
                       <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>
                         🗑 Delete
                       </Button>
                     )}
                   </div>
                   <div className="flex gap-2.5">
-                    {viewPO.status === "ordered" && (
-                      <Button onClick={() => handleReceive(viewPO.id)}>✓ Mark as Received</Button>
+                    {(viewPO.status === "ordered" || viewPO.status === "partially_received") && (
+                      <>
+                        <Button variant="secondary" onClick={() => openReceiveModal(viewPO)}>📦 Partial Receive</Button>
+                        <Button onClick={() => handleReceiveAll(viewPO.id)}>✓ Receive All</Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -701,6 +768,64 @@ export default function PurchaseOrdersPage() {
                 <div className="flex gap-2.5">
                   <Button variant="secondary" onClick={() => { setEditModal(false); setEditingPO(null); }}>Cancel</Button>
                   <Button onClick={saveEdit}>Save Changes</Button>
+                </div>
+              </div>
+            </>
+          )}
+        </Modal>
+
+        {/* ─── PARTIAL RECEIVE MODAL ──────────────────── */}
+        <Modal open={receiveModal} onClose={() => { setReceiveModal(false); setReceivePO(null); }} title={`Receive Items — ${receivePO?.po_number || ""}`} className="w-[620px]">
+          {receivePO && (
+            <>
+              <div className="text-xs text-gray-400 mb-4">Enter the quantity received for each item. Leave at 0 to skip.</div>
+              <div className="bg-[#0B0F19] rounded-xl p-4 mb-5 max-h-[400px] overflow-y-auto">
+                {(receivePO.line_items || []).filter((item) => item.product?.name !== "Shipping").map((item) => {
+                  const remaining = item.quantity - (item.received_qty || 0);
+                  const isFullyReceived = remaining <= 0;
+                  return (
+                    <div key={item.id} className={`flex items-center justify-between py-3 border-b border-border last:border-0 ${isFullyReceived ? "opacity-50" : ""}`}>
+                      <div className="flex-1 mr-4">
+                        <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
+                        <div className="text-[11px] text-gray-500">
+                          Ordered: {item.quantity} · Received: {item.received_qty || 0} · Remaining: {remaining}
+                        </div>
+                      </div>
+                      <div className="w-24">
+                        {isFullyReceived ? (
+                          <div className="text-xs text-emerald-400 text-center">✓ Done</div>
+                        ) : (
+                          <input
+                            type="number"
+                            min="0"
+                            max={remaining}
+                            value={receiveQtys[item.id] || "0"}
+                            onChange={(e) => setReceiveQtys({ ...receiveQtys, [item.id]: e.target.value })}
+                            className="w-full bg-surface-card border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 text-center focus:outline-none focus:border-brand"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    const qtys: Record<string, string> = {};
+                    (receivePO.line_items || []).forEach((item) => {
+                      const remaining = item.quantity - (item.received_qty || 0);
+                      qtys[item.id] = String(Math.max(0, remaining));
+                    });
+                    setReceiveQtys(qtys);
+                  }}
+                  className="text-[12px] text-brand hover:text-brand-light underline"
+                >
+                  Fill all remaining
+                </button>
+                <div className="flex gap-2.5">
+                  <Button variant="secondary" onClick={() => { setReceiveModal(false); setReceivePO(null); }}>Cancel</Button>
+                  <Button onClick={handlePartialReceive}>Receive Items</Button>
                 </div>
               </div>
             </>
