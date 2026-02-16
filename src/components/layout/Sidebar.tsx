@@ -11,8 +11,8 @@ const NAV_ITEMS = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: "◫" },
   { href: "/stock-movements", label: "Stock Movements", icon: "⇅" },
   { href: "/suppliers", label: "Suppliers", icon: "◎" },
-  { href: "/katana-sync", label: "Katana Sync", icon: "??" },
-  { href: "/reports", label: "Reports", icon: "??" },
+  { href: "/katana-sync", label: "Katana Sync", icon: "K" },
+  { href: "/reports", label: "Reports", icon: "R" },
 ];
 
 export function Sidebar() {
@@ -79,6 +79,7 @@ export function Sidebar() {
     </div>
   );
 }
+
 
 
 
