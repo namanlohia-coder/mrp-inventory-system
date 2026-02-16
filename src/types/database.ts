@@ -13,6 +13,15 @@ export interface Product {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Katana sync fields
+  default_supplier_id?: string;
+  expected_qty?: number;
+  committed_qty?: number;
+  safety_stock?: number;
+  value_in_stock?: number;
+  location?: string;
+  // Joined
+  default_supplier?: Supplier;
 }
 
 export interface Supplier {
@@ -41,6 +50,7 @@ export interface PurchaseOrder {
   // Joined
   supplier?: Supplier;
   line_items?: POLineItem[];
+  total_amount?: number;
 }
 
 export interface POLineItem {

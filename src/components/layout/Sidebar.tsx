@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/stock-movements", label: "Stock Movements", icon: "⇅" },
   { href: "/suppliers", label: "Suppliers", icon: "◎" },
   { href: "/csv-import", label: "CSV Import", icon: "??" },
+  { href: "/katana-sync", label: "Katana Sync", icon: "??" },
   { href: "/reports", label: "Reports", icon: "??" },
 ];
 
@@ -79,4 +80,5 @@ export function Sidebar() {
     </div>
   );
 }
+
 

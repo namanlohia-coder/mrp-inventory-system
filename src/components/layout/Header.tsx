@@ -10,6 +10,7 @@ const pageTitles: Record<string, string> = {
   "/stock-movements": "Stock Movements",
   "/suppliers": "Suppliers",
   "/reports": "Reports",
+  "/katana-sync": "Katana Inventory Sync",
 };
 
 export function Header({ lowStockCount }: { lowStockCount: number }) {

@@ -13,10 +13,10 @@ import type {
 export async function getProducts() {
   const { data, error } = await supabase
     .from("products")
-    .select("*")
+    .select("*, default_supplier:suppliers!default_supplier_id(id, name)")
     .eq("is_active", true)
     .order("name")
-    .limit(2000);
+    .limit(5000);
   if (error) throw error;
   return data as Product[];
 }
@@ -91,6 +91,26 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>) {
     .single();
   if (error) throw error;
   return data as Supplier;
+}
+
+export async function deleteSupplier(id: string) {
+  const { error } = await supabase
+    .from("suppliers")
+    .update({ is_active: false } as any)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function getSupplierPOCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("supplier_id");
+  if (error) return {};
+  const counts: Record<string, number> = {};
+  (data || []).forEach((po: any) => {
+    counts[po.supplier_id] = (counts[po.supplier_id] || 0) + 1;
+  });
+  return counts;
 }
 
 // ─── PURCHASE ORDERS ─────────────────────────
@@ -623,6 +643,130 @@ export async function findOrCreateSupplier(name: string): Promise<string> {
     address: "",
   } as any);
   return supplier.id;
+}
+
+// ─── KATANA INVENTORY SYNC ─────────────────────
+
+export interface KatanaItem {
+  name: string;
+  sku: string;
+  category: string;
+  defaultSupplier: string;
+  unit: string;
+  avgCost: number;
+  valueInStock: number;
+  inStock: number;
+  expected: number;
+  committed: number;
+  safetyStock: number;
+  location: string;
+}
+
+export async function bulkSyncKatanaInventory(
+  items: KatanaItem[],
+  onProgress?: (done: number, total: number) => void
+): Promise<{ created: number; updated: number; errors: string[] }> {
+  let created = 0;
+  let updated = 0;
+  const errors: string[] = [];
+
+  // Pre-load all existing products for matching
+  const { data: existingProducts } = await supabase
+    .from("products")
+    .select("id, name, sku")
+    .eq("is_active", true)
+    .limit(5000);
+  
+  const skuMap = new Map<string, string>();
+  const nameMap = new Map<string, string>();
+  for (const p of existingProducts || []) {
+    if (p.sku) skuMap.set(p.sku.trim().toLowerCase(), p.id);
+    if (p.name) nameMap.set(p.name.trim().toLowerCase(), p.id);
+  }
+
+  // Pre-load suppliers
+  const { data: existingSuppliers } = await supabase
+    .from("suppliers")
+    .select("id, name")
+    .eq("is_active", true);
+  const supplierMap = new Map<string, string>();
+  for (const s of existingSuppliers || []) {
+    supplierMap.set(s.name.trim().toLowerCase(), s.id);
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    try {
+      // Find supplier ID if name provided
+      let supplierId: string | null = null;
+      if (item.defaultSupplier) {
+        const key = item.defaultSupplier.trim().toLowerCase();
+        if (supplierMap.has(key)) {
+          supplierId = supplierMap.get(key)!;
+        } else {
+          // Create supplier
+          const sup = await createSupplier({
+            name: item.defaultSupplier.trim(),
+            contact_name: "",
+            email: "",
+            phone: "",
+            address: "",
+          } as any);
+          supplierId = sup.id;
+          supplierMap.set(key, sup.id);
+        }
+      }
+
+      // Match by SKU first, then name
+      let productId: string | null = null;
+      if (item.sku) {
+        productId = skuMap.get(item.sku.trim().toLowerCase()) || null;
+      }
+      if (!productId && item.name) {
+        productId = nameMap.get(item.name.trim().toLowerCase()) || null;
+      }
+
+      const updates: any = {
+        name: item.name.trim(),
+        sku: item.sku.trim() || undefined,
+        category: item.category.trim() || undefined,
+        cost: item.avgCost,
+        stock: item.inStock,
+        unit: item.unit || "ea",
+        expected_qty: item.expected,
+        committed_qty: item.committed,
+        safety_stock: item.safetyStock,
+        value_in_stock: item.valueInStock,
+        location: item.location.trim() || undefined,
+      };
+      if (supplierId) updates.default_supplier_id = supplierId;
+
+      // Remove undefined values
+      Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
+
+      if (productId) {
+        // Update existing
+        await supabase.from("products").update(updates).eq("id", productId);
+        updated++;
+      } else {
+        // Create new
+        updates.is_active = true;
+        updates.reorder_point = item.safetyStock || 0;
+        updates.price = 0;
+        const { data: newProd } = await supabase.from("products").insert(updates).select("id").single();
+        if (newProd) {
+          if (item.sku) skuMap.set(item.sku.trim().toLowerCase(), newProd.id);
+          nameMap.set(item.name.trim().toLowerCase(), newProd.id);
+        }
+        created++;
+      }
+    } catch (err: any) {
+      errors.push(`${item.name}: ${err.message}`);
+    }
+    if (onProgress) onProgress(i + 1, items.length);
+  }
+
+  return { created, updated, errors };
 }
 
 // ─── REPORTS ────────────────────────────────────
