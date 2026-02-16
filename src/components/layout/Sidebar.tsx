@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: "◫" },
   { href: "/stock-movements", label: "Stock Movements", icon: "⇅" },
   { href: "/suppliers", label: "Suppliers", icon: "◎" },
+  { href: "/csv-import", label: "CSV Import", icon: "??" },
+  { href: "/reports", label: "Reports", icon: "??" },
 ];
 
 export function Sidebar() {
@@ -77,3 +79,4 @@ export function Sidebar() {
     </div>
   );
 }
+
