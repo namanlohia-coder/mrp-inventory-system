@@ -75,24 +75,29 @@ function parseKatanaInventoryCSV(csvText: string): KatanaItem[] {
   const locationCol = col("Location");
 
   const items: KatanaItem[] = [];
+  const f = (fields: string[], idx: number, fallback = "") => {
+    if (idx < 0 || idx >= fields.length) return fallback;
+    return (fields[idx] || fallback) + "";
+  };
+
   for (let i = 1; i < lines.length; i++) {
     const fields = parseCSVLine(lines[i]);
-    const name = (nameCol >= 0 ? fields[nameCol] : "").trim();
+    const name = f(fields, nameCol).trim();
     if (!name) continue;
 
     items.push({
       name,
-      sku: (skuCol >= 0 ? fields[skuCol] : "").trim(),
-      category: (categoryCol >= 0 ? fields[categoryCol] : "").trim(),
-      defaultSupplier: (supplierCol >= 0 ? fields[supplierCol] : "").trim(),
-      unit: (unitCol >= 0 ? fields[unitCol] : "ea").trim() || "ea",
-      avgCost: parseFloat(fields[costCol] || "0") || 0,
-      valueInStock: parseFloat(fields[valueCol] || "0") || 0,
-      inStock: parseFloat(fields[stockCol] || "0") || 0,
-      expected: parseFloat(fields[expectedCol] || "0") || 0,
-      committed: parseFloat(fields[committedCol] || "0") || 0,
-      safetyStock: parseFloat(fields[safetyCol] || "0") || 0,
-      location: (locationCol >= 0 ? fields[locationCol] : "").trim(),
+      sku: f(fields, skuCol).trim(),
+      category: f(fields, categoryCol).trim(),
+      defaultSupplier: f(fields, supplierCol).trim(),
+      unit: f(fields, unitCol, "ea").trim() || "ea",
+      avgCost: parseFloat(f(fields, costCol, "0")) || 0,
+      valueInStock: parseFloat(f(fields, valueCol, "0")) || 0,
+      inStock: parseFloat(f(fields, stockCol, "0")) || 0,
+      expected: parseFloat(f(fields, expectedCol, "0")) || 0,
+      committed: parseFloat(f(fields, committedCol, "0")) || 0,
+      safetyStock: parseFloat(f(fields, safetyCol, "0")) || 0,
+      location: f(fields, locationCol).trim(),
     });
   }
   return items;
@@ -439,4 +444,3 @@ export default function KatanaSyncPage() {
     </>
   );
 }
-
