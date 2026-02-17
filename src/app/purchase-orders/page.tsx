@@ -274,8 +274,9 @@ export default function PurchaseOrdersPage() {
 
   /* --------- CREATE NEW PRODUCT INLINE --------- */
   const handleCreateProduct = async (name: string): Promise<string> => {
+    const autoSku = "NEW-" + Date.now().toString(36).toUpperCase();
     const newProd = await createProduct({
-      name, sku: "", category: "General", unit: "pcs",
+      name, sku: autoSku, category: "General", unit: "pcs",
       stock: 0, cost: 0, price: 0, reorder_point: 0, image: "", is_active: true,
     } as any);
     setProducts((prev) => [...prev, newProd].sort((a, b) => a.name.localeCompare(b.name)));
