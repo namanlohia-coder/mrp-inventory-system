@@ -1,11 +1,15 @@
-import "./globals.css";
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
 import { Toaster } from "react-hot-toast";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AuthGuard } from "@/components/auth/AuthGuard";
+import { LayoutInner } from "@/components/layout/LayoutInner";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "MRP Inventory System",
-  description: "Manufacturing Resource Planning & Inventory Management",
+  description: "Inventory management for Skyfront Corp",
 };
 
 export default function RootLayout({
@@ -14,22 +18,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {children}
-          </div>
-        </div>
+    <html lang="en" className="dark">
+      <body className={`${inter.className} bg-surface text-gray-100`}>
+        <AuthGuard>
+          <LayoutInner>{children}</LayoutInner>
+        </AuthGuard>
         <Toaster
           position="top-right"
           toastOptions={{
             style: {
-              background: "#1E293B",
-              color: "#E2E8F0",
-              borderRadius: "10px",
-              border: "1px solid #2A3A52",
+              background: "#1A1F2E",
+              color: "#E5E7EB",
+              border: "1px solid #2A2F3E",
               fontSize: "13px",
             },
           }}

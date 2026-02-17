@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "D" },
@@ -18,6 +19,12 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   return (
     <div
@@ -68,6 +75,14 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Logout */}
+      <button
+        onClick={handleLogout}
+        className="mx-2 mb-1 px-3.5 py-2 rounded-xl text-[13px] font-medium text-red-400 hover:bg-red-500/10 bg-transparent border-none cursor-pointer transition-colors text-left"
+      >
+        {collapsed ? "X" : "Logout"}
+      </button>
 
       {/* Collapse Toggle */}
       <button
