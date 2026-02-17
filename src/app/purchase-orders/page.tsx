@@ -374,7 +374,7 @@ export default function PurchaseOrdersPage() {
   const lineTotal = lineItems.reduce((s, i) => s + (parseFloat(i.qty) || 0) * (parseFloat(i.unitCost) || 0), 0);
 
   // Memoize options for ComboBox
-  const supplierOptions = useMemo(() => suppliers.map((s) => ({ value: s.id, label: s.name })), [suppliers]);
+  const supplierOptions = useMemo(() => suppliers.filter((s) => !s.name.startsWith("**")).map((s) => ({ value: s.id, label: s.name })), [suppliers]);
   const productOptions = useMemo(() => products.map((p) => ({ value: p.id, label: `${p.sku ? `[${p.sku}] ` : ""}${p.name}` })), [products]);
 
   if (loading) return <LoadingSpinner />;
