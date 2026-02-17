@@ -18,12 +18,12 @@ import type { Product, Supplier, PurchaseOrder } from "@/types/database";
 const PAGE_SIZE = 50;
 
 function fmtDate(d: string | null | undefined): string {
-  if (!d) return "\u2014";
+  if (!d) return "-";
   const date = new Date(d);
   return date.toLocaleDateString("en-US", { timeZone: "UTC" });
 }
 
-/* ─── COMBOBOX COMPONENT ───────────────────── */
+/* --------- COMBOBOX COMPONENT --------------------------------------------------------------- */
 function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, createLabel }: {
   label?: string;
   value: string;
@@ -260,7 +260,7 @@ export default function PurchaseOrdersPage() {
     finally { setViewLoading(false); }
   };
 
-  /* ─── CREATE NEW SUPPLIER INLINE ─── */
+  /* --------- CREATE NEW SUPPLIER INLINE --------- */
   const handleCreateSupplier = async (name: string): Promise<string> => {
     const newSup = await createSupplier({ name, is_active: true } as any);
     setSuppliers((prev) => [...prev, newSup].sort((a, b) => a.name.localeCompare(b.name)));
@@ -268,11 +268,11 @@ export default function PurchaseOrdersPage() {
     return newSup.id;
   };
 
-  /* ─── CREATE NEW PRODUCT INLINE ─── */
+  /* --------- CREATE NEW PRODUCT INLINE --------- */
   const handleCreateProduct = async (name: string): Promise<string> => {
     const newProd = await createProduct({
       name, sku: "", category: "General", unit: "pcs",
-      stock: 0, cost: 0, price: 0, reorder_point: 0, image: "\uD83D\uDCE6", is_active: true,
+      stock: 0, cost: 0, price: 0, reorder_point: 0, image: "", is_active: true,
     } as any);
     setProducts((prev) => [...prev, newProd].sort((a, b) => a.name.localeCompare(b.name)));
     toast.success(`Product "${name}" created`);
@@ -306,7 +306,7 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleReceive = async (poId: string) => {
-    try { await receivePurchaseOrder(poId); toast.success("PO received \u2014 stock updated"); setViewPO(null); load(); }
+    try { await receivePurchaseOrder(poId); toast.success("PO received - stock updated"); setViewPO(null); load(); }
     catch (err: any) { toast.error(err.message || "Failed to receive PO"); }
   };
 
@@ -327,7 +327,7 @@ export default function PurchaseOrdersPage() {
       })).filter((i) => i.received_qty > 0);
       if (items.length === 0) return toast.error("Enter quantities to receive");
       await partialReceivePO(receivingPO.id, items);
-      toast.success("Items received \u2014 stock updated");
+      toast.success("Items received - stock updated");
       setReceiveModal(false); setReceivingPO(null); setViewPO(null); load();
     } catch (err: any) { toast.error(err.message || "Failed to receive items"); }
   };
@@ -383,28 +383,28 @@ export default function PurchaseOrdersPage() {
     <>
       <Header lowStockCount={lowStockCount} />
       <main className="flex-1 overflow-auto p-8">
-        {/* ─── TOP BAR ─── */}
+        {/* --------- TOP BAR --------- */}
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-4">
             <div className="text-[13px] text-gray-400">
               {hasActiveFilters ? `${filtered.length} matching` : `${totalCount} purchase orders`}
-              {filterStatus === "received" ? " \u00b7 Received" : " \u00b7 Open"}
+              {filterStatus === "received" ? " | Received" : " | Open"}
             </div>
             <div className="text-[14px] font-bold text-brand">{formatCurrency(hasActiveFilters ? filteredTotal : dbTotal)}</div>
           </div>
           <div className="flex gap-3">
-            <Button variant="secondary" onClick={exportCSV}>\uD83D\uDCE5 Export CSV</Button>
+            <Button variant="secondary" onClick={exportCSV}>Export CSV</Button>
             <Button onClick={openCreate}>+ Create Purchase Order</Button>
           </div>
         </div>
 
-        {/* ─── SEARCH + FILTER BAR ─── */}
+        {/* --------- SEARCH + FILTER BAR --------- */}
         <div className="mb-4 flex flex-col gap-3">
           <div className="flex gap-2.5 items-center">
             <div className="relative flex-1 max-w-sm">
               <input type="text" placeholder="Search by PO#, supplier, product, or SKU..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-surface-card border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand" />
-              {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">\u2715</button>}
+              {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">x</button>}
             </div>
             {(["ordered", "received"] as const).map((s) => (
               <button key={s} onClick={() => switchTab(s)}
@@ -414,7 +414,7 @@ export default function PurchaseOrdersPage() {
             ))}
             <button onClick={() => setShowFilters(!showFilters)}
               className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${showFilters ? "bg-brand/20 border-brand text-brand" : "bg-surface-card border-border text-gray-400 hover:border-border-light"}`}>
-              \u2699 Filters
+              Filters
             </button>
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}
               className="bg-surface-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-gray-400 focus:outline-none focus:border-brand">
@@ -449,7 +449,7 @@ export default function PurchaseOrdersPage() {
           )}
         </div>
 
-        {/* ─── PO LIST ─── */}
+        {/* --------- PO LIST --------- */}
         <div className="flex flex-col gap-3">
           {filtered.map((po) => (
             <div key={po.id} onClick={() => openViewPO(po)}
@@ -457,7 +457,7 @@ export default function PurchaseOrdersPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <div className="font-bold text-sm text-gray-100 font-mono">{po.po_number}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{po.supplier?.name || "Unknown"} \u00b7 Created {fmtDate(po.created_at)}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{po.supplier?.name || "Unknown"} | Created {fmtDate(po.created_at)}</div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
@@ -481,11 +481,11 @@ export default function PurchaseOrdersPage() {
           </div>
         )}
         {filtered.length === 0 && !hasActiveFilters && (
-          <EmptyState icon={filterStatus === "ordered" ? "\uD83D\uDCE6" : "\uD83D\uDCCB"} title={filterStatus === "ordered" ? "No open purchase orders" : "No received purchase orders"} sub={filterStatus === "ordered" ? "Create a new PO to get started" : "No POs have been received yet"} />
+          <EmptyState icon=">" title={filterStatus === "ordered" ? "No open purchase orders" : "No received purchase orders"} sub={filterStatus === "ordered" ? "Create a new PO to get started" : "No POs have been received yet"} />
         )}
-        {filtered.length === 0 && hasActiveFilters && <EmptyState icon="\uD83D\uDD0D" title="No matching POs" sub="Try adjusting your filters" />}
+        {filtered.length === 0 && hasActiveFilters && <EmptyState icon="?" title="No matching POs" sub="Try adjusting your filters" />}
 
-        {/* ─── CREATE MODAL ─── */}
+        {/* --------- CREATE MODAL --------- */}
         <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create Purchase Order" className="w-[90vw] max-w-[1100px]">
           <div className="text-xs text-gray-500 font-mono mb-5">{nextNum}</div>
           <div className="grid grid-cols-2 gap-4 mb-6">
@@ -519,7 +519,7 @@ export default function PurchaseOrdersPage() {
               />
               <Input label={i === 0 ? "Qty" : undefined} type="number" value={item.qty} onChange={(e) => updateLineItem(i, "qty", e.target.value)} />
               <Input label={i === 0 ? "Unit Cost" : undefined} type="number" value={item.unitCost} onChange={(e) => updateLineItem(i, "unitCost", e.target.value)} />
-              <Button size="sm" variant="ghost" onClick={() => removeLineItem(i)}>\u2715</Button>
+              <Button size="sm" variant="ghost" onClick={() => removeLineItem(i)}>x</Button>
             </div>
           ))}
           <Button size="sm" variant="secondary" onClick={addLineItem} className="mb-4">+ Add Line Item</Button>
@@ -533,7 +533,7 @@ export default function PurchaseOrdersPage() {
           </div>
         </Modal>
 
-        {/* ─── VIEW MODAL ─── */}
+        {/* --------- VIEW MODAL --------- */}
         <Modal open={!!viewPO} onClose={() => setViewPO(null)} title={`Purchase Order ${viewPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {viewPO && (() => {
             const lineItemsSubtotal = viewPO.line_items?.reduce((s, i) => s + i.quantity * i.unit_cost, 0) || 0;
@@ -542,7 +542,7 @@ export default function PurchaseOrdersPage() {
             return (
               <>
                 <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div><div className="text-[11px] text-gray-500 mb-1">SUPPLIER</div><div className="text-sm font-semibold text-gray-100">{viewPO.supplier?.name || "\u2014"}</div></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">SUPPLIER</div><div className="text-sm font-semibold text-gray-100">{viewPO.supplier?.name || "-"}</div></div>
                   <div><div className="text-[11px] text-gray-500 mb-1">STATUS</div><Badge color={getPOStatusColor(viewPO.status) as any}>{viewPO.status}</Badge></div>
                   <div><div className="text-[11px] text-gray-500 mb-1">CREATED</div><div className="text-[13px] text-gray-400">{fmtDate(viewPO.created_at)}</div></div>
                   <div><div className="text-[11px] text-gray-500 mb-1">EXPECTED</div><div className="text-[13px] text-gray-400">{fmtDate(viewPO.expected_date)}</div></div>
@@ -556,9 +556,9 @@ export default function PurchaseOrdersPage() {
                         <div>
                           <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
                           <div className="text-[11px] text-gray-500">
-                            {item.product?.sku || ""} \u00b7 {item.quantity} \u00d7 {formatCurrency(item.unit_cost)}
+                            {item.product?.sku || ""} | {item.quantity} x {formatCurrency(item.unit_cost)}
                             {(item.received_qty || 0) > 0 && (item.received_qty || 0) < item.quantity && <span className="ml-2 text-amber-400">({item.received_qty}/{item.quantity} received)</span>}
-                            {(item.received_qty || 0) >= item.quantity && item.quantity > 0 && <span className="ml-2 text-emerald-400">\u2714 received</span>}
+                            {(item.received_qty || 0) >= item.quantity && item.quantity > 0 && <span className="ml-2 text-emerald-400">(received)</span>}
                           </div>
                         </div>
                         <div className="font-bold text-sm text-gray-100">{formatCurrency(item.quantity * item.unit_cost)}</div>
@@ -581,21 +581,21 @@ export default function PurchaseOrdersPage() {
                 {viewPO.notes && <div className="text-xs text-gray-400 mb-4">Notes: {viewPO.notes}</div>}
                 {viewPO.status === "received" && (
                   <div className="text-xs text-emerald-400 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
-                    \u2714 Received \u2014 items have been added to inventory
+                    Received - items have been added to inventory
                   </div>
                 )}
                 <div className="flex justify-between items-center pt-2">
                   <div className="flex gap-3">
-                    <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>\uD83D\uDCC4 Export PDF</Button>
-                    <Button variant="secondary" onClick={() => handleDuplicate(viewPO)}>\uD83D\uDCCB Duplicate</Button>
-                    {viewPO.status === "ordered" && <Button variant="secondary" onClick={() => openEditPO(viewPO)}>\u270F\uFE0F Edit</Button>}
+                    <Button variant="secondary" onClick={() => handleExportPdf(viewPO)}>Export PDF</Button>
+                    <Button variant="secondary" onClick={() => handleDuplicate(viewPO)}>Duplicate</Button>
+                    {viewPO.status === "ordered" && <Button variant="secondary" onClick={() => openEditPO(viewPO)}>Edit</Button>}
                   </div>
                   <div className="flex gap-3">
-                    {viewPO.status === "ordered" && <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>\uD83D\uDDD1 Delete</Button>}
+                    {viewPO.status === "ordered" && <Button variant="danger" onClick={() => handleDelete(viewPO.id)}>Delete</Button>}
                     {viewPO.status === "ordered" && (
                       <>
-                        <Button variant="secondary" onClick={() => { setViewPO(null); openReceiveModal(viewPO); }}>\uD83D\uDCE6 Partial Receive</Button>
-                        <Button onClick={() => handleReceive(viewPO.id)}>\u2714 Receive All</Button>
+                        <Button variant="secondary" onClick={() => { setViewPO(null); openReceiveModal(viewPO); }}>Partial Receive</Button>
+                        <Button onClick={() => handleReceive(viewPO.id)}>Receive All</Button>
                       </>
                     )}
                   </div>
@@ -605,7 +605,7 @@ export default function PurchaseOrdersPage() {
           })()}
         </Modal>
 
-        {/* ─── EDIT MODAL ─── */}
+        {/* --------- EDIT MODAL --------- */}
         <Modal open={editModal} onClose={() => { setEditModal(false); setEditingPO(null); }} title={`Edit ${editingPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {editingPO && (
             <>
@@ -639,7 +639,7 @@ export default function PurchaseOrdersPage() {
                   />
                   <Input label={i === 0 ? "Qty" : undefined} type="number" value={item.qty} onChange={(e) => updateEditLineItem(i, "qty", e.target.value)} />
                   <Input label={i === 0 ? "Unit Cost" : undefined} type="number" value={item.unitCost} onChange={(e) => updateEditLineItem(i, "unitCost", e.target.value)} />
-                  <Button size="sm" variant="ghost" onClick={() => removeEditLineItem(i)}>\u2715</Button>
+                  <Button size="sm" variant="ghost" onClick={() => removeEditLineItem(i)}>x</Button>
                 </div>
               ))}
               <Button size="sm" variant="secondary" onClick={addEditLineItem} className="mb-4">+ Add Line Item</Button>
@@ -657,8 +657,8 @@ export default function PurchaseOrdersPage() {
           )}
         </Modal>
 
-        {/* ─── PARTIAL RECEIVE MODAL ─── */}
-        <Modal open={receiveModal} onClose={() => { setReceiveModal(false); setReceivingPO(null); }} title={`Receive Items \u2014 ${receivingPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
+        {/* --------- PARTIAL RECEIVE MODAL --------- */}
+        <Modal open={receiveModal} onClose={() => { setReceiveModal(false); setReceivingPO(null); }} title={`Receive Items - ${receivingPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {receivingPO && (
             <>
               <div className="text-xs text-gray-400 mb-4">Enter the quantity received for each item. Leave at 0 to skip.</div>
@@ -670,10 +670,10 @@ export default function PurchaseOrdersPage() {
                     <div key={item.id} className={`flex items-center justify-between py-3 border-b border-border last:border-0 ${isFullyReceived ? "opacity-50" : ""}`}>
                       <div className="flex-1 mr-4">
                         <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
-                        <div className="text-[11px] text-gray-500">Ordered: {item.quantity} \u00b7 Received: {item.received_qty || 0} \u00b7 Remaining: {remaining}</div>
+                        <div className="text-[11px] text-gray-500">Ordered: {item.quantity} | Received: {item.received_qty || 0} | Remaining: {remaining}</div>
                       </div>
                       <div className="w-24">
-                        {isFullyReceived ? <div className="text-xs text-emerald-400 text-center">\u2714 Done</div> : (
+                        {isFullyReceived ? <div className="text-xs text-emerald-400 text-center">Done</div> : (
                           <input type="number" min="0" max={remaining} value={receiveQtys[item.id] || "0"}
                             onChange={(e) => setReceiveQtys({ ...receiveQtys, [item.id]: e.target.value })}
                             className="w-full bg-surface-card border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 text-center focus:outline-none focus:border-brand" />

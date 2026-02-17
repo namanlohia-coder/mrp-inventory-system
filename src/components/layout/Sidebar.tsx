@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: "◉" },
-  { href: "/inventory", label: "Inventory", icon: "☰" },
-  { href: "/purchase-orders", label: "Purchase Orders", icon: "◫" },
-  { href: "/stock-movements", label: "Stock Movements", icon: "⇅" },
-  { href: "/suppliers", label: "Suppliers", icon: "◎" },
+  { href: "/dashboard", label: "Dashboard", icon: "D" },
+  { href: "/inventory", label: "Inventory", icon: "I" },
+  { href: "/purchase-orders", label: "Purchase Orders", icon: "P" },
+  { href: "/stock-movements", label: "Stock Movements", icon: "S" },
+  { href: "/suppliers", label: "Suppliers", icon: "V" },
   { href: "/katana-sync", label: "Katana Sync", icon: "K" },
   { href: "/reports", label: "Reports", icon: "R" },
 ];
@@ -74,7 +74,7 @@ export function Sidebar() {
         onClick={() => setCollapsed(!collapsed)}
         className="p-4 border-t border-border bg-transparent text-gray-500 cursor-pointer text-sm font-sans hover:text-gray-300 transition-colors"
       >
-        {collapsed ? "→" : "← Collapse"}
+        {collapsed ? ">" : "< Collapse"}
       </button>
     </div>
   );
