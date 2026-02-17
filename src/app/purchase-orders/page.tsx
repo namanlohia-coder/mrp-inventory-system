@@ -127,7 +127,7 @@ export default function PurchaseOrdersPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc">("date-desc");
+  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "supplier-asc" | "supplier-desc">("date-desc");
 
   const [nextNum, setNextNum] = useState("");
   const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
@@ -225,6 +225,8 @@ export default function PurchaseOrdersPage() {
         case "date-asc": return new Date(aDate).getTime() - new Date(bDate).getTime();
         case "amount-desc": return bAmount - aAmount;
         case "amount-asc": return aAmount - bAmount;
+        case "supplier-asc": return (a.supplier?.name || "").localeCompare(b.supplier?.name || "");
+        case "supplier-desc": return (b.supplier?.name || "").localeCompare(a.supplier?.name || "");
         default: return new Date(bDate).getTime() - new Date(aDate).getTime();
       }
     });
@@ -422,6 +424,8 @@ export default function PurchaseOrdersPage() {
               <option value="date-asc">{filterStatus === "ordered" ? "Earliest expected" : "Oldest received"}</option>
               <option value="amount-desc">Highest amount</option>
               <option value="amount-asc">Lowest amount</option>
+              <option value="supplier-asc">Supplier A-Z</option>
+              <option value="supplier-desc">Supplier Z-A</option>
             </select>
             {hasActiveFilters && <button onClick={clearFilters} className="text-[11px] text-red-400 hover:text-red-300 underline">Clear all</button>}
           </div>

@@ -15,7 +15,6 @@ export default function SuppliersPage() {
   const [poCounts, setPOCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [leadFilter, setLeadFilter] = useState<"all" | "short" | "medium" | "long">("all");
   const [addModal, setAddModal] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [editingSup, setEditingSup] = useState<Supplier | null>(null);
@@ -43,9 +42,6 @@ export default function SuppliersPage() {
       (s.phone || "").toLowerCase().includes(q)
     );
   }
-  if (leadFilter === "short") displayed = displayed.filter((s) => s.lead_time_days <= 7);
-  else if (leadFilter === "medium") displayed = displayed.filter((s) => s.lead_time_days > 7 && s.lead_time_days <= 30);
-  else if (leadFilter === "long") displayed = displayed.filter((s) => s.lead_time_days > 30);
 
   const openAdd = () => { setForm(emptyForm); setAddModal(true); };
   const handleAdd = async () => {
@@ -101,13 +97,7 @@ export default function SuppliersPage() {
           <input type="text" placeholder="Search name, email, phone..."
             value={search} onChange={(e) => setSearch(e.target.value)}
             className="flex-1 max-w-xs bg-[#0B0F19] border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand" />
-          {(["all", "short", "medium", "long"] as const).map((f) => (
-            <button key={f} onClick={() => setLeadFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all ${
-                leadFilter === f ? "bg-brand/20 border-brand text-brand" : "bg-surface-card border-border text-gray-400 hover:border-border-light"}`}>
-              {f === "all" ? "All" : f === "short" ? "0-7d" : f === "medium" ? "8-30d" : "30d+"}
-            </button>
-          ))}
+
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
