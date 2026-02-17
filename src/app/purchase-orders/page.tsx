@@ -127,7 +127,7 @@ export default function PurchaseOrdersPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "supplier-asc" | "supplier-desc">("date-desc");
+  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "supplier-asc" | "supplier-desc" | "po-desc" | "po-asc">("date-desc");
 
   const [nextNum, setNextNum] = useState("");
   const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
@@ -227,6 +227,8 @@ export default function PurchaseOrdersPage() {
         case "amount-asc": return aAmount - bAmount;
         case "supplier-asc": return (a.supplier?.name || "").localeCompare(b.supplier?.name || "");
         case "supplier-desc": return (b.supplier?.name || "").localeCompare(a.supplier?.name || "");
+        case "po-desc": return b.po_number.localeCompare(a.po_number);
+        case "po-asc": return a.po_number.localeCompare(b.po_number);
         default: return new Date(bDate).getTime() - new Date(aDate).getTime();
       }
     });
@@ -426,6 +428,8 @@ export default function PurchaseOrdersPage() {
               <option value="amount-asc">Lowest amount</option>
               <option value="supplier-asc">Supplier A-Z</option>
               <option value="supplier-desc">Supplier Z-A</option>
+              <option value="po-desc">PO# Highest first</option>
+              <option value="po-asc">PO# Lowest first</option>
             </select>
             {hasActiveFilters && <button onClick={clearFilters} className="text-[11px] text-red-400 hover:text-red-300 underline">Clear all</button>}
           </div>
