@@ -144,7 +144,10 @@ export default function CustomersPage() {
   const lowStockCount = products.filter((p: any) => p.stock <= p.reorder_point).length;
 
   const productOptions = useMemo(() =>
-    products.map((p: any) => ({ value: p.id, label: p.name + " | " + p.sku + " (" + p.stock + " in stock)" })),
+    products.map((p: any) => {
+      const hasRealSku = p.sku && !p.sku.startsWith("NEW-");
+      return { value: p.id, label: hasRealSku ? p.name + " | " + p.sku : p.name };
+    }),
     [products]
   );
 
