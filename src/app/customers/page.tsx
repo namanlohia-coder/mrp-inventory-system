@@ -121,6 +121,7 @@ export default function CustomersPage() {
 
   // PO import modal
   const [poPickerOpen, setPoPickerOpen] = useState(false);
+  const [soFilterCustomer, setSoFilterCustomer] = useState("");
   const [poPickerSearch, setPoPickerSearch] = useState("");
   const [poDetail, setPoDetail] = useState<any>(null);
   const [poDetailLoading, setPoDetailLoading] = useState(false);
@@ -410,58 +411,117 @@ export default function CustomersPage() {
         )}
 
         {/* SALES ORDERS TAB */}
-        {activeTab === "sales" && (
-          <div className="space-y-3">
-            {displayedOrders.map((so: any) => (
-              <div key={so.id} className="bg-surface-card border border-border rounded-[14px] p-5">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-bold text-[15px] text-gray-100">{so.order_number}</span>
-                      <Badge color={so.status === "sold" ? "green" : "blue"}>
-                        {so.status === "sold" ? "SOLD" : "DRAFT"}
-                      </Badge>
+        {activeTab === "sales" && (() => {
+          // Filter by selected customer
+          const custFiltered = soFilterCustomer
+            ? displayedOrders.filter((so: any) => so.customer_id === soFilterCustomer)
+            : displayedOrders;
+
+          // Group by customer
+          const byCustomer: Record<string, { name: string; orders: any[] }> = {};
+          for (const so of custFiltered) {
+            const custId = so.customer_id || "none";
+            const custName = so.customer?.name || "No Customer";
+            if (!byCustomer[custId]) byCustomer[custId] = { name: custName, orders: [] };
+            byCustomer[custId].orders.push(so);
+          }
+
+          // Within each customer, group by order_number (invoice)
+          const customerGroups = Object.entries(byCustomer).sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+          return (
+            <div className="space-y-4">
+              {/* Filters */}
+              <div className="flex gap-3 items-center">
+                <select value={soFilterCustomer} onChange={(e) => setSoFilterCustomer(e.target.value)}
+                  className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand">
+                  <option value="">All Customers</option>
+                  {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <span className="text-[12px] text-gray-500">{custFiltered.length} order{custFiltered.length !== 1 ? "s" : ""}</span>
+              </div>
+
+              {customerGroups.map(([custId, group]) => {
+                // Group orders by invoice number within this customer
+                const byInvoice: Record<string, any[]> = {};
+                for (const so of group.orders) {
+                  const inv = so.order_number || "No Invoice";
+                  if (!byInvoice[inv]) byInvoice[inv] = [];
+                  byInvoice[inv].push(so);
+                }
+
+                return (
+                  <div key={custId} className="space-y-3">
+                    {/* Customer header */}
+                    <div className="flex items-center gap-2 pt-2">
+                      <div className="w-8 h-8 rounded-full bg-brand/20 text-brand flex items-center justify-center text-[13px] font-bold">
+                        {group.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-[14px] font-semibold text-gray-100">{group.name}</span>
+                      <span className="text-[12px] text-gray-500">({group.orders.length} order{group.orders.length !== 1 ? "s" : ""})</span>
                     </div>
-                    <div className="text-[12px] text-gray-500 mt-1">
-                      {so.customer?.name || "No customer"} | {new Date(so.created_at).toLocaleDateString()}
-                      {so.sold_date && " | Sold " + new Date(so.sold_date).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-[16px] text-gray-100">{formatCurrency(so.total_amount || 0)}</span>
-                    {so.status === "draft" && (
-                      <>
-                        <Button size="sm" onClick={() => handleMarkSold(so)}>Mark Sold</Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleDeleteSO(so)} className="!text-red-400">Del</Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                {so.line_items && so.line_items.length > 0 && (
-                  <div className="mt-3 border-t border-border pt-3">
-                    {so.line_items.map((li: any, idx: number) => (
-                      <div key={li.id || idx} className="flex justify-between items-center py-1.5 text-[13px]">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-200">{li.product?.name || "Unknown"}</span>
-                          {li.poNumber && (
-                            <span className="text-[11px] text-gray-500 bg-surface rounded px-1.5 py-0.5">{li.poNumber}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 text-gray-400">
-                          <span>x{li.quantity}</span>
-                          <span>{formatCurrency(li.unit_cost)}</span>
-                          <span className="text-gray-200 font-medium">{formatCurrency(li.quantity * li.unit_cost)}</span>
-                        </div>
+
+                    {Object.entries(byInvoice).map(([invoiceNum, orders]) => (
+                      <div key={invoiceNum} className="ml-10 space-y-2">
+                        {orders.length > 1 && (
+                          <div className="text-[11px] text-gray-500 uppercase tracking-wide font-medium">{invoiceNum} ({orders.length} entries)</div>
+                        )}
+                        {orders.map((so: any) => (
+                          <div key={so.id} className="bg-surface-card border border-border rounded-[14px] p-5">
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <div className="flex items-center gap-2.5">
+                                  <span className="font-bold text-[15px] text-gray-100">{so.order_number}</span>
+                                  <Badge color={so.status === "sold" ? "green" : "blue"}>
+                                    {so.status === "sold" ? "SOLD" : "DRAFT"}
+                                  </Badge>
+                                </div>
+                                <div className="text-[12px] text-gray-500 mt-1">
+                                  {new Date(so.created_at).toLocaleDateString()}
+                                  {so.sold_date && " | Sold " + new Date(so.sold_date).toLocaleDateString()}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-[16px] text-gray-100">{formatCurrency(so.total_amount || 0)}</span>
+                                {so.status === "draft" && (
+                                  <>
+                                    <Button size="sm" onClick={() => handleMarkSold(so)}>Mark Sold</Button>
+                                    <Button size="sm" variant="ghost" onClick={() => handleDeleteSO(so)} className="!text-red-400">Del</Button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            {so.line_items && so.line_items.length > 0 && (
+                              <div className="mt-3 border-t border-border pt-3">
+                                {so.line_items.map((li: any, idx: number) => (
+                                  <div key={li.id || idx} className="flex justify-between items-center py-1.5 text-[13px]">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-200">{li.product?.name || "Unknown"}</span>
+                                      {li.poNumber && (
+                                        <span className="text-[11px] text-gray-500 bg-surface rounded px-1.5 py-0.5">{li.poNumber}</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-4 text-gray-400">
+                                      <span>x{li.quantity}</span>
+                                      <span>{formatCurrency(li.unit_cost)}</span>
+                                      <span className="text-gray-200 font-medium">{formatCurrency(li.quantity * li.unit_cost)}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {so.notes && <div className="text-[11px] text-gray-500 mt-2 italic">{so.notes}</div>}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
-                )}
-                {so.notes && <div className="text-[11px] text-gray-500 mt-2 italic">{so.notes}</div>}
-              </div>
-            ))}
-            {displayedOrders.length === 0 && <EmptyState icon="S" title="No sales orders" sub="Create your first sales order" />}
-          </div>
-        )}
+                );
+              })}
+              {custFiltered.length === 0 && <EmptyState icon="S" title="No sales orders" sub="Create your first sales order" />}
+            </div>
+          );
+        })()}
 
         {/* ADD CUSTOMER */}
         <Modal open={addCustModal} onClose={() => setAddCustModal(false)} title="Add Customer">
