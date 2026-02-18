@@ -32,6 +32,11 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   const exactMatch = options.some((o) => o.label.toLowerCase() === search.toLowerCase());
   const showCreate = onCreateNew && search.trim() && !exactMatch;
 
+  // Reset search when value changes externally (e.g. PO import)
+  useEffect(() => {
+    if (!open) setSearch("");
+  }, [value, open]);
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -282,11 +287,12 @@ export default function CustomersPage() {
     const newLines = (poDetail.line_items || [])
       .filter((li: any) => poSelectedItems.has(li.id))
       .map((li: any) => ({
-        productId: li.product_id,
-        qty: String(li.quantity),
-        unitCost: String(li.unit_cost),
+        productId: li.product_id || li.product?.id || "",
+        qty: String(li.quantity || 0),
+        unitCost: String(li.unit_cost || 0),
         poNumber: poDetail.po_number,
-      }));
+      }))
+      .filter((l: any) => l.productId);
 
     // Remove empty first line if it exists
     let current = [...soLines];
