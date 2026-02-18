@@ -1,17 +1,94 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
-import { supabase } from "@/lib/supabase";
 import {
   getCustomers, createCustomer, updateCustomer, deleteCustomer,
-  getProducts, getSalesOrders, getNextSONumber, createSalesOrder,
-  markSalesOrderSold, deleteSalesOrder, getPurchaseOrders,
+  getProducts, createProduct, getSalesOrders, getNextSONumber, createSalesOrder,
+  markSalesOrderSold, deleteSalesOrder, getPurchaseOrders, getPurchaseOrder,
 } from "@/lib/data";
 import { Header } from "@/components/layout/Header";
 import { Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner } from "@/components/ui";
 import { formatCurrency } from "@/lib/utils";
 
+// --- COMBOBOX (searchable dropdown with create) ---
+function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, createLabel }: {
+  label?: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  onCreateNew?: (name: string) => Promise<string>;
+  placeholder?: string;
+  createLabel?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value);
+  const filtered = search
+    ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
+    : options;
+  const exactMatch = options.some((o) => o.label.toLowerCase() === search.toLowerCase());
+  const showCreate = onCreateNew && search.trim() && !exactMatch;
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleCreate = async () => {
+    if (!onCreateNew || !search.trim() || creating) return;
+    setCreating(true);
+    try {
+      const newId = await onCreateNew(search.trim());
+      onChange(newId);
+      setSearch("");
+      setOpen(false);
+    } catch (err: any) { toast.error(err.message || "Failed to create"); }
+    finally { setCreating(false); }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      {label && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">{label}</label>}
+      <input
+        type="text"
+        value={open ? search : (current?.label || "")}
+        onChange={(e) => { setSearch(e.target.value); if (!open) setOpen(true); }}
+        onFocus={() => { setOpen(true); setSearch(""); }}
+        placeholder={placeholder || "Search..."}
+        className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+      />
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-surface-card border border-border rounded-lg shadow-xl max-h-[240px] overflow-y-auto">
+          {filtered.slice(0, 50).map((opt) => (
+            <div key={opt.value}
+              onClick={() => { onChange(opt.value); setSearch(""); setOpen(false); }}
+              className={`px-3 py-2 text-[13px] cursor-pointer hover:bg-surface-hover transition-colors ${
+                opt.value === value ? "text-brand font-medium" : "text-gray-300"}`}>
+              {opt.label}
+            </div>
+          ))}
+          {filtered.length === 0 && !showCreate && (
+            <div className="px-3 py-2 text-[12px] text-gray-500">No matches</div>
+          )}
+          {showCreate && (
+            <div onClick={handleCreate}
+              className="px-3 py-2 text-[13px] cursor-pointer hover:bg-brand/10 text-brand border-t border-border font-medium">
+              {creating ? "Creating..." : `+ ${createLabel || "Create"} "${search.trim()}"`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- MAIN PAGE ---
 const emptyCustomerForm = { name: "", email: "", phone: "", address: "", notes: "" };
 
 export default function CustomersPage() {
@@ -21,7 +98,6 @@ export default function CustomersPage() {
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // View
   const [activeTab, setActiveTab] = useState<"customers" | "sales">("customers");
   const [search, setSearch] = useState("");
 
@@ -36,18 +112,19 @@ export default function CustomersPage() {
   const [soNumber, setSoNumber] = useState("");
   const [soCustomerId, setSoCustomerId] = useState("");
   const [soNotes, setSoNotes] = useState("");
-  const [soLines, setSoLines] = useState<{ productId: string; qty: string; unitCost: string; poId: string }[]>([]);
+  const [soLines, setSoLines] = useState<{ productId: string; qty: string; unitCost: string; poNumber: string }[]>([]);
 
-  // Detail modal
-  const [detailOrder, setDetailOrder] = useState<any>(null);
+  // PO import modal
+  const [poPickerOpen, setPoPickerOpen] = useState(false);
+  const [poPickerSearch, setPoPickerSearch] = useState("");
+  const [poDetail, setPoDetail] = useState<any>(null);
+  const [poDetailLoading, setPoDetailLoading] = useState(false);
+  const [poSelectedItems, setPoSelectedItems] = useState<Set<string>>(new Set());
 
   const loadAll = async () => {
     try {
       const [cust, prods, orders, pos] = await Promise.all([
-        getCustomers(),
-        getProducts(),
-        getSalesOrders(),
-        getPurchaseOrders(),
+        getCustomers(), getProducts(), getSalesOrders(), getPurchaseOrders(),
       ]);
       setCustomers(cust);
       setProducts(prods);
@@ -59,6 +136,28 @@ export default function CustomersPage() {
   useEffect(() => { loadAll(); }, []);
 
   const lowStockCount = products.filter((p: any) => p.stock <= p.reorder_point).length;
+
+  const productOptions = useMemo(() =>
+    products.map((p: any) => ({ value: p.id, label: p.name + " | " + p.sku + " (" + p.stock + " in stock)" })),
+    [products]
+  );
+
+  const customerOptions = useMemo(() =>
+    customers.map((c: any) => ({ value: c.id, label: c.name })),
+    [customers]
+  );
+
+  // --- PRODUCT CREATE ---
+  const handleCreateProduct = async (name: string): Promise<string> => {
+    const autoSku = "NEW-" + Date.now().toString(36).toUpperCase();
+    const newProd = await createProduct({
+      name, sku: autoSku, category: "General", unit: "pcs",
+      stock: 0, cost: 0, price: 0, reorder_point: 0, image: "", is_active: true,
+    } as any);
+    setProducts((prev) => [...prev, newProd].sort((a: any, b: any) => a.name.localeCompare(b.name)));
+    toast.success("Product created");
+    return newProd.id;
+  };
 
   // --- CUSTOMERS ---
   const displayedCustomers = customers.filter((c) =>
@@ -87,25 +186,19 @@ export default function CustomersPage() {
     if (!editingCust || !custForm.name) return toast.error("Name required");
     try {
       await updateCustomer(editingCust.id, custForm);
-      toast.success("Customer updated");
-      setEditCustModal(false);
-      setEditingCust(null);
-      loadAll();
+      toast.success("Updated"); setEditCustModal(false); setEditingCust(null); loadAll();
     } catch (err: any) { toast.error(err.message || "Failed"); }
   };
 
   const handleDeleteCustomer = async (c: any) => {
-    if (!confirm("Deactivate \"" + c.name + "\"?")) return;
-    try { await deleteCustomer(c.id); toast.success("Customer removed"); loadAll(); }
+    if (!confirm("Remove \"" + c.name + "\"?")) return;
+    try { await deleteCustomer(c.id); toast.success("Removed"); loadAll(); }
     catch { toast.error("Failed"); }
   };
 
-  // Count orders per customer
   const orderCountByCustomer = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const so of salesOrders) {
-      counts[so.customer_id] = (counts[so.customer_id] || 0) + 1;
-    }
+    for (const so of salesOrders) counts[so.customer_id] = (counts[so.customer_id] || 0) + 1;
     return counts;
   }, [salesOrders]);
 
@@ -120,12 +213,12 @@ export default function CustomersPage() {
     setSoNumber(num);
     setSoCustomerId(customers[0]?.id || "");
     setSoNotes("");
-    setSoLines([{ productId: products[0]?.id || "", qty: "1", unitCost: String(products[0]?.cost || 0), poId: "" }]);
+    setSoLines([{ productId: "", qty: "1", unitCost: "0", poNumber: "" }]);
     setSoModal(true);
   };
 
   const addSOLine = () => {
-    setSoLines([...soLines, { productId: products[0]?.id || "", qty: "1", unitCost: String(products[0]?.cost || 0), poId: "" }]);
+    setSoLines([...soLines, { productId: "", qty: "1", unitCost: "0", poNumber: "" }]);
   };
 
   const removeSOLine = (idx: number) => {
@@ -136,7 +229,6 @@ export default function CustomersPage() {
   const updateSOLine = (idx: number, field: string, value: string) => {
     const updated = [...soLines];
     (updated[idx] as any)[field] = value;
-    // Auto-fill unit cost when product changes
     if (field === "productId") {
       const prod = products.find((p: any) => p.id === value);
       if (prod) updated[idx].unitCost = String(prod.cost || 0);
@@ -146,17 +238,76 @@ export default function CustomersPage() {
 
   const soTotal = soLines.reduce((s, l) => s + (parseFloat(l.qty) || 0) * (parseFloat(l.unitCost) || 0), 0);
 
+  // --- PO IMPORT ---
+  const filteredPOs = purchaseOrders.filter((po: any) =>
+    !poPickerSearch || po.po_number.toLowerCase().includes(poPickerSearch.toLowerCase()) ||
+    (po.supplier?.name || "").toLowerCase().includes(poPickerSearch.toLowerCase())
+  );
+
+  const openPOPicker = () => {
+    setPoPickerSearch("");
+    setPoDetail(null);
+    setPoSelectedItems(new Set());
+    setPoPickerOpen(true);
+  };
+
+  const loadPODetail = async (poId: string) => {
+    setPoDetailLoading(true);
+    try {
+      const full = await getPurchaseOrder(poId);
+      setPoDetail(full);
+      // Select all by default
+      const allIds = new Set((full.line_items || []).map((li: any) => li.id));
+      setPoSelectedItems(allIds);
+    } catch { toast.error("Failed to load PO"); }
+    finally { setPoDetailLoading(false); }
+  };
+
+  const togglePOItem = (id: string) => {
+    const next = new Set(poSelectedItems);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setPoSelectedItems(next);
+  };
+
+  const selectAllPOItems = () => {
+    if (!poDetail) return;
+    const allIds = new Set((poDetail.line_items || []).map((li: any) => li.id));
+    setPoSelectedItems(allIds);
+  };
+
+  const selectNonePOItems = () => { setPoSelectedItems(new Set()); };
+
+  const importPOItems = () => {
+    if (!poDetail || poSelectedItems.size === 0) return toast.error("Select at least one item");
+    const newLines = (poDetail.line_items || [])
+      .filter((li: any) => poSelectedItems.has(li.id))
+      .map((li: any) => ({
+        productId: li.product_id,
+        qty: String(li.quantity),
+        unitCost: String(li.unit_cost),
+        poNumber: poDetail.po_number,
+      }));
+
+    // Remove empty first line if it exists
+    let current = [...soLines];
+    if (current.length === 1 && !current[0].productId) current = [];
+    setSoLines([...current, ...newLines]);
+    setPoPickerOpen(false);
+    setPoDetail(null);
+    toast.success(newLines.length + " items imported from " + poDetail.po_number);
+  };
+
   const handleCreateSO = async () => {
     if (!soCustomerId) return toast.error("Select a customer");
-    if (soLines.some((l) => !l.productId)) return toast.error("Select products for all lines");
+    const validLines = soLines.filter((l) => l.productId);
+    if (validLines.length === 0) return toast.error("Add at least one product");
     try {
       await createSalesOrder(
         { customer_id: soCustomerId, order_number: soNumber, notes: soNotes },
-        soLines.map((l) => ({
+        validLines.map((l) => ({
           product_id: l.productId,
           quantity: parseInt(l.qty) || 1,
           unit_cost: parseFloat(l.unitCost) || 0,
-          purchase_order_id: l.poId || undefined,
         }))
       );
       toast.success("Sales order created");
@@ -166,16 +317,16 @@ export default function CustomersPage() {
   };
 
   const handleMarkSold = async (so: any) => {
-    if (!confirm("Mark \"" + so.order_number + "\" as sold? This will deduct inventory.")) return;
+    if (!confirm("Mark \"" + so.order_number + "\" as sold? This deducts inventory.")) return;
     try {
       await markSalesOrderSold(so.id);
-      toast.success("Marked as sold - inventory deducted");
+      toast.success("Sold - inventory deducted");
       loadAll();
     } catch (err: any) { toast.error(err.message || "Failed"); }
   };
 
   const handleDeleteSO = async (so: any) => {
-    if (so.status === "sold") return toast.error("Cannot delete a sold order");
+    if (so.status === "sold") return toast.error("Cannot delete sold order");
     if (!confirm("Delete \"" + so.order_number + "\"?")) return;
     try { await deleteSalesOrder(so.id); toast.success("Deleted"); loadAll(); }
     catch { toast.error("Failed"); }
@@ -203,10 +354,10 @@ export default function CustomersPage() {
         <div className="flex items-center justify-between mb-5">
           <div className="flex gap-2">
             {(["customers", "sales"] as const).map((t) => (
-              <button key={t} onClick={() => setActiveTab(t)}
+              <button key={t} onClick={() => { setActiveTab(t); setSearch(""); }}
                 className={`px-4 py-2 rounded-lg text-[13px] font-medium border transition-all cursor-pointer ${
                   activeTab === t ? "bg-brand/20 border-brand text-brand" : "bg-surface-card border-border text-gray-400 hover:border-border-light"}`}>
-                {t === "customers" ? "Customers" : "Sales Orders"}
+                {t === "customers" ? "Customers (" + customers.length + ")" : "Sales Orders (" + salesOrders.length + ")"}
               </button>
             ))}
           </div>
@@ -262,7 +413,7 @@ export default function CustomersPage() {
                       </Badge>
                     </div>
                     <div className="text-[12px] text-gray-500 mt-1">
-                      {so.customer?.name || "No customer"} | Created {new Date(so.created_at).toLocaleDateString()}
+                      {so.customer?.name || "No customer"} | {new Date(so.created_at).toLocaleDateString()}
                       {so.sold_date && " | Sold " + new Date(so.sold_date).toLocaleDateString()}
                     </div>
                   </div>
@@ -276,17 +427,14 @@ export default function CustomersPage() {
                     )}
                   </div>
                 </div>
-                {/* Line items */}
                 {so.line_items && so.line_items.length > 0 && (
                   <div className="mt-3 border-t border-border pt-3">
                     {so.line_items.map((li: any, idx: number) => (
                       <div key={li.id || idx} className="flex justify-between items-center py-1.5 text-[13px]">
                         <div className="flex items-center gap-2">
                           <span className="text-gray-200">{li.product?.name || "Unknown"}</span>
-                          {li.purchase_order?.po_number && (
-                            <span className="text-[11px] text-gray-500 bg-surface rounded px-1.5 py-0.5">
-                              {li.purchase_order.po_number}
-                            </span>
+                          {li.poNumber && (
+                            <span className="text-[11px] text-gray-500 bg-surface rounded px-1.5 py-0.5">{li.poNumber}</span>
                           )}
                         </div>
                         <div className="flex items-center gap-4 text-gray-400">
@@ -305,7 +453,7 @@ export default function CustomersPage() {
           </div>
         )}
 
-        {/* ADD CUSTOMER MODAL */}
+        {/* ADD CUSTOMER */}
         <Modal open={addCustModal} onClose={() => setAddCustModal(false)} title="Add Customer">
           {renderCustForm()}
           <div className="flex justify-end gap-2.5 mt-6">
@@ -314,7 +462,7 @@ export default function CustomersPage() {
           </div>
         </Modal>
 
-        {/* EDIT CUSTOMER MODAL */}
+        {/* EDIT CUSTOMER */}
         <Modal open={editCustModal} onClose={() => { setEditCustModal(false); setEditingCust(null); }} title={"Edit " + (editingCust?.name || "Customer")}>
           {renderCustForm()}
           <div className="flex justify-end gap-2.5 mt-6">
@@ -323,22 +471,33 @@ export default function CustomersPage() {
           </div>
         </Modal>
 
-        {/* CREATE SALES ORDER MODAL */}
+        {/* CREATE SALES ORDER */}
         <Modal open={soModal} onClose={() => setSoModal(false)} title={"Create Sales Order - " + soNumber}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <Select label="Customer" value={soCustomerId} onChange={(e) => setSoCustomerId(e.target.value)}
-                options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+              <ComboBox label="Customer" value={soCustomerId} onChange={setSoCustomerId}
+                options={customerOptions} placeholder="Search customers..." />
               <Input label="Order #" value={soNumber} onChange={(e) => setSoNumber(e.target.value)} />
             </div>
 
-            <div className="text-[12px] text-gray-400 font-medium uppercase tracking-wide">Line Items</div>
+            {/* Line items header + Import button */}
+            <div className="flex items-center justify-between">
+              <div className="text-[12px] text-gray-400 font-medium uppercase tracking-wide">Line Items</div>
+              <button onClick={openPOPicker}
+                className="text-[12px] text-brand bg-brand/10 border border-brand/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-brand/20 transition-colors font-medium">
+                Import from PO
+              </button>
+            </div>
+
             {soLines.map((line, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-4">
-                  <Select label={idx === 0 ? "Product" : ""} value={line.productId}
-                    onChange={(e) => updateSOLine(idx, "productId", e.target.value)}
-                    options={products.map((p: any) => ({ value: p.id, label: p.name + " (" + p.stock + " in stock)" }))} />
+                <div className="col-span-5">
+                  <ComboBox label={idx === 0 ? "Product" : ""} value={line.productId}
+                    onChange={(v) => updateSOLine(idx, "productId", v)}
+                    options={productOptions}
+                    onCreateNew={handleCreateProduct}
+                    placeholder="Search product or type to create..."
+                    createLabel="Create product" />
                 </div>
                 <div className="col-span-2">
                   <Input label={idx === 0 ? "Qty" : ""} type="number" min="1" value={line.qty}
@@ -348,10 +507,9 @@ export default function CustomersPage() {
                   <Input label={idx === 0 ? "Unit Cost" : ""} type="number" step="0.01" value={line.unitCost}
                     onChange={(e) => updateSOLine(idx, "unitCost", e.target.value)} />
                 </div>
-                <div className="col-span-3">
-                  <Select label={idx === 0 ? "Linked PO (optional)" : ""} value={line.poId}
-                    onChange={(e) => updateSOLine(idx, "poId", e.target.value)}
-                    options={[{ value: "", label: "None" }, ...purchaseOrders.map((po: any) => ({ value: po.id, label: po.po_number }))]} />
+                <div className="col-span-2 text-right text-[13px] text-gray-300 font-medium pb-1">
+                  {formatCurrency((parseFloat(line.qty) || 0) * (parseFloat(line.unitCost) || 0))}
+                  {line.poNumber && <div className="text-[10px] text-gray-500">{line.poNumber}</div>}
                 </div>
                 <div className="col-span-1 flex justify-center pb-1">
                   {soLines.length > 1 && (
@@ -361,6 +519,7 @@ export default function CustomersPage() {
                 </div>
               </div>
             ))}
+
             <button onClick={addSOLine}
               className="text-[12px] text-brand bg-transparent border border-brand/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-brand/10 transition-colors">
               + Add Line Item
@@ -374,6 +533,89 @@ export default function CustomersPage() {
             <Button variant="secondary" onClick={() => setSoModal(false)}>Cancel</Button>
             <Button onClick={handleCreateSO}>Create Order</Button>
           </div>
+        </Modal>
+
+        {/* PO PICKER MODAL */}
+        <Modal open={poPickerOpen} onClose={() => { setPoPickerOpen(false); setPoDetail(null); }}
+          title={poDetail ? "Import from " + poDetail.po_number : "Select a Purchase Order"}>
+
+          {!poDetail ? (
+            <div className="space-y-3">
+              <input type="text" placeholder="Search PO# or supplier..."
+                value={poPickerSearch} onChange={(e) => setPoPickerSearch(e.target.value)}
+                className="w-full bg-[#0B0F19] border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand" />
+              <div className="max-h-[400px] overflow-y-auto space-y-1">
+                {filteredPOs.slice(0, 50).map((po: any) => (
+                  <div key={po.id} onClick={() => loadPODetail(po.id)}
+                    className="flex justify-between items-center px-4 py-3 rounded-lg cursor-pointer hover:bg-surface-hover transition-colors border border-border">
+                    <div>
+                      <div className="text-[13px] font-semibold text-gray-100">{po.po_number}</div>
+                      <div className="text-[11px] text-gray-500">{po.supplier?.name || ""}</div>
+                    </div>
+                    <div className="text-[13px] text-gray-400">{formatCurrency(po.total_amount || 0)}</div>
+                  </div>
+                ))}
+                {filteredPOs.length === 0 && <div className="text-center text-gray-500 text-[13px] py-6">No POs found</div>}
+              </div>
+            </div>
+          ) : poDetailLoading ? (
+            <div className="text-center py-8 text-gray-400">Loading PO details...</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-[12px] text-gray-400 mb-2">
+                {poDetail.supplier?.name} | {(poDetail.line_items || []).length} items | {formatCurrency(poDetail.total_amount || 0)}
+              </div>
+
+              {/* Select all / none */}
+              <div className="flex gap-2">
+                <button onClick={selectAllPOItems}
+                  className="text-[11px] text-brand bg-brand/10 border border-brand/30 rounded px-2 py-1 cursor-pointer hover:bg-brand/20">
+                  Select All
+                </button>
+                <button onClick={selectNonePOItems}
+                  className="text-[11px] text-gray-400 bg-transparent border border-border rounded px-2 py-1 cursor-pointer hover:border-border-light">
+                  Select None
+                </button>
+                <button onClick={() => { setPoDetail(null); setPoSelectedItems(new Set()); }}
+                  className="text-[11px] text-gray-400 bg-transparent border border-border rounded px-2 py-1 cursor-pointer hover:border-border-light">
+                  Back to list
+                </button>
+              </div>
+
+              {/* Line items with checkboxes */}
+              <div className="max-h-[350px] overflow-y-auto space-y-1">
+                {(poDetail.line_items || []).map((li: any) => (
+                  <div key={li.id}
+                    onClick={() => togglePOItem(li.id)}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer border transition-colors ${
+                      poSelectedItems.has(li.id) ? "border-brand bg-brand/5" : "border-border hover:bg-surface-hover"}`}>
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center text-[11px] font-bold ${
+                      poSelectedItems.has(li.id) ? "border-brand bg-brand text-white" : "border-gray-600"}`}>
+                      {poSelectedItems.has(li.id) ? "v" : ""}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[13px] text-gray-200">{li.product?.name || "Unknown"}</div>
+                      <div className="text-[11px] text-gray-500">{li.product?.sku || ""}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[13px] text-gray-300">x{li.quantity}</div>
+                      <div className="text-[11px] text-gray-500">{formatCurrency(li.unit_cost)} ea</div>
+                    </div>
+                    <div className="text-[13px] font-medium text-gray-200 w-24 text-right">
+                      {formatCurrency(li.quantity * li.unit_cost)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-border">
+                <div className="text-[13px] text-gray-400">{poSelectedItems.size} items selected</div>
+                <Button onClick={importPOItems} disabled={poSelectedItems.size === 0}>
+                  Import {poSelectedItems.size} Item{poSelectedItems.size !== 1 ? "s" : ""}
+                </Button>
+              </div>
+            </div>
+          )}
         </Modal>
       </main>
     </>
