@@ -64,7 +64,7 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
         type="text"
         value={open ? search : (current?.label || "")}
         onChange={(e) => { setSearch(e.target.value); if (!open) setOpen(true); }}
-        onFocus={() => { setOpen(true); setSearch(""); }}
+        onFocus={() => { setOpen(true); setSearch(current?.label || ""); }}
         placeholder={placeholder || "Search..."}
         className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
       />
