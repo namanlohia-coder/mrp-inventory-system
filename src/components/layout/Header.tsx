@@ -8,6 +8,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/purchase-orders": "Purchase Orders",
   "/stock-movements": "Stock Movements",
   "/suppliers": "Suppliers",
+  "/customers": "Customers",
   "/katana-sync": "Katana Sync",
   "/csv-import": "CSV Import",
   "/reports": "Reports",

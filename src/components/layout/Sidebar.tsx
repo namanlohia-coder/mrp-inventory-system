@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: "P" },
   { href: "/stock-movements", label: "Stock Movements", icon: "S" },
   { href: "/suppliers", label: "Suppliers", icon: "V" },
+  { href: "/customers", label: "Customers", icon: "C" },
   { href: "/katana-sync", label: "Katana Sync", icon: "K" },
   { href: "/reports", label: "Reports", icon: "R" },
 ];

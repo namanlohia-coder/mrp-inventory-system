@@ -788,3 +788,150 @@ export async function getReportData() {
     products,
   };
 }
+
+// --- CUSTOMERS ---
+
+export async function getCustomers() {
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("is_active", true)
+    .order("name");
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createCustomer(customer: any) {
+  const { data, error } = await supabase
+    .from("customers")
+    .insert(customer)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateCustomer(id: string, updates: any) {
+  const { data, error } = await supabase
+    .from("customers")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteCustomer(id: string) {
+  const { error } = await supabase
+    .from("customers")
+    .update({ is_active: false })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// --- SALES ORDERS ---
+
+export async function getSalesOrders() {
+  const { data, error } = await supabase
+    .from("sales_orders")
+    .select("*, customer:customers(id, name), line_items:sales_line_items(*, product:products(id, name, sku, stock, unit), purchase_order:purchase_orders(id, po_number))")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getNextSONumber(): Promise<string> {
+  const { data, error } = await supabase
+    .from("sales_orders")
+    .select("order_number")
+    .ilike("order_number", "SO-%")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error || !data || data.length === 0) return "SO-1001";
+  let maxNum = 0;
+  for (const row of data) {
+    const match = row.order_number.match(/^SO-(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+  return "SO-" + (maxNum + 1);
+}
+
+export async function createSalesOrder(
+  order: { customer_id: string; order_number: string; notes?: string },
+  lineItems: { product_id: string; quantity: number; unit_cost: number; purchase_order_id?: string }[]
+) {
+  const totalAmount = lineItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0);
+  const { data: soData, error: soError } = await supabase
+    .from("sales_orders")
+    .insert({
+      customer_id: order.customer_id,
+      order_number: order.order_number,
+      notes: order.notes || "",
+      total_amount: totalAmount,
+      status: "draft",
+    })
+    .select()
+    .single();
+  if (soError) throw soError;
+
+  const items = lineItems.map((item) => ({
+    sales_order_id: soData.id,
+    product_id: item.product_id,
+    quantity: item.quantity,
+    unit_cost: item.unit_cost,
+    purchase_order_id: item.purchase_order_id || null,
+  }));
+  const { error: itemsError } = await supabase
+    .from("sales_line_items")
+    .insert(items);
+  if (itemsError) throw itemsError;
+
+  return soData;
+}
+
+export async function markSalesOrderSold(soId: string) {
+  // Get all line items
+  const { data: lineItems, error: liErr } = await supabase
+    .from("sales_line_items")
+    .select("product_id, quantity")
+    .eq("sales_order_id", soId);
+  if (liErr) throw liErr;
+
+  // Deduct stock for each product
+  for (const item of lineItems || []) {
+    const { data: product } = await supabase
+      .from("products")
+      .select("stock")
+      .eq("id", item.product_id)
+      .single();
+    if (product) {
+      const newStock = Math.max(0, product.stock - item.quantity);
+      await supabase.from("products").update({ stock: newStock }).eq("id", item.product_id);
+      // Record stock movement
+      await supabase.from("stock_movements").insert({
+        product_id: item.product_id,
+        movement_type: "out",
+        quantity: item.quantity,
+        reference: "Sales order " + soId,
+        notes: "Sold to customer",
+      });
+    }
+  }
+
+  // Update sales order status
+  const { error } = await supabase
+    .from("sales_orders")
+    .update({ status: "sold", sold_date: new Date().toISOString().split("T")[0] })
+    .eq("id", soId);
+  if (error) throw error;
+}
+
+export async function deleteSalesOrder(soId: string) {
+  await supabase.from("sales_line_items").delete().eq("sales_order_id", soId);
+  const { error } = await supabase.from("sales_orders").delete().eq("id", soId);
+  if (error) throw error;
+}
