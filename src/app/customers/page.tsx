@@ -117,7 +117,7 @@ export default function CustomersPage() {
   const [soNumber, setSoNumber] = useState("");
   const [soCustomerId, setSoCustomerId] = useState("");
   const [soNotes, setSoNotes] = useState("");
-  const [soLines, setSoLines] = useState<{ productId: string; qty: string; unitCost: string; poNumber: string }[]>([]);
+  const [soLines, setSoLines] = useState<{ productId: string; productName: string; qty: string; unitCost: string; poNumber: string }[]>([]);
 
   // PO import modal
   const [poPickerOpen, setPoPickerOpen] = useState(false);
@@ -218,12 +218,12 @@ export default function CustomersPage() {
     setSoNumber(num);
     setSoCustomerId(customers[0]?.id || "");
     setSoNotes("");
-    setSoLines([{ productId: "", qty: "1", unitCost: "0", poNumber: "" }]);
+    setSoLines([{ productId: "", productName: "", qty: "1", unitCost: "0", poNumber: "" }]);
     setSoModal(true);
   };
 
   const addSOLine = () => {
-    setSoLines([...soLines, { productId: "", qty: "1", unitCost: "0", poNumber: "" }]);
+    setSoLines([...soLines, { productId: "", productName: "", qty: "1", unitCost: "0", poNumber: "" }]);
   };
 
   const removeSOLine = (idx: number) => {
@@ -236,7 +236,10 @@ export default function CustomersPage() {
     (updated[idx] as any)[field] = value;
     if (field === "productId") {
       const prod = products.find((p: any) => p.id === value);
-      if (prod) updated[idx].unitCost = String(prod.cost || 0);
+      if (prod) {
+        updated[idx].unitCost = String(prod.cost || 0);
+        updated[idx].productName = prod.name;
+      }
     }
     setSoLines(updated);
   };
@@ -288,6 +291,7 @@ export default function CustomersPage() {
       .filter((li: any) => poSelectedItems.has(li.id))
       .map((li: any) => ({
         productId: li.product_id || li.product?.id || "",
+        productName: li.product?.name || "",
         qty: String(li.quantity || 0),
         unitCost: String(li.unit_cost || 0),
         poNumber: poDetail.po_number,
@@ -498,12 +502,25 @@ export default function CustomersPage() {
             {soLines.map((line, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-5">
-                  <ComboBox label={idx === 0 ? "Product" : ""} value={line.productId}
-                    onChange={(v) => updateSOLine(idx, "productId", v)}
-                    options={productOptions}
-                    onCreateNew={handleCreateProduct}
-                    placeholder="Search product or type to create..."
-                    createLabel="Create product" />
+                  {line.productId && line.productName ? (
+                    <div>
+                      {idx === 0 && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">Product</label>}
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1 bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 truncate">
+                          {line.productName}
+                        </div>
+                        <button onClick={() => { const updated = [...soLines]; updated[idx].productId = ""; updated[idx].productName = ""; setSoLines(updated); }}
+                          className="text-[11px] text-gray-500 bg-transparent border-none cursor-pointer hover:text-gray-300 shrink-0">chg</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <ComboBox label={idx === 0 ? "Product" : ""} value={line.productId}
+                      onChange={(v) => updateSOLine(idx, "productId", v)}
+                      options={productOptions}
+                      onCreateNew={handleCreateProduct}
+                      placeholder="Search product or type to create..."
+                      createLabel="Create product" />
+                  )}
                 </div>
                 <div className="col-span-2">
                   <Input label={idx === 0 ? "Qty" : ""} type="number" min="1" value={line.qty}
