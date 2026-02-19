@@ -127,7 +127,7 @@ export default function PurchaseOrdersPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "supplier-asc" | "supplier-desc" | "po-desc" | "po-asc">("date-desc");
+  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "supplier-asc" | "supplier-desc" | "po-desc" | "po-asc">("supplier-asc");
 
   const [nextNum, setNextNum] = useState("");
   const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });

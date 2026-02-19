@@ -7,14 +7,13 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 
 const NAV_ITEMS = [
+  { href: "/customers", label: "Customers", icon: "C" },
   { href: "/dashboard", label: "Dashboard", icon: "D" },
   { href: "/inventory", label: "Inventory", icon: "I" },
   { href: "/purchase-orders", label: "Purchase Orders", icon: "P" },
+  { href: "/reports", label: "Reports", icon: "R" },
   { href: "/stock-movements", label: "Stock Movements", icon: "S" },
   { href: "/suppliers", label: "Suppliers", icon: "V" },
-  { href: "/customers", label: "Customers", icon: "C" },
-  { href: "/katana-sync", label: "Katana Sync", icon: "K" },
-  { href: "/reports", label: "Reports", icon: "R" },
 ];
 
 export function Sidebar() {
