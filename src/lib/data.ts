@@ -935,3 +935,14 @@ export async function deleteSalesOrder(soId: string) {
   const { error } = await supabase.from("sales_orders").delete().eq("id", soId);
   if (error) throw error;
 }
+
+export async function updateSalesOrder(soId: string, updates: any) {
+  const { data, error } = await supabase
+    .from("sales_orders")
+    .update(updates)
+    .eq("id", soId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}

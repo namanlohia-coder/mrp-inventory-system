@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   getCustomers, createCustomer, updateCustomer, deleteCustomer,
   getProducts, createProduct, getSalesOrders, getNextSONumber, createSalesOrder,
-  markSalesOrderSold, deleteSalesOrder, getPurchaseOrders, getPurchaseOrder,
+  markSalesOrderSold, deleteSalesOrder, updateSalesOrder, getPurchaseOrders, getPurchaseOrder,
 } from "@/lib/data";
 import { Header } from "@/components/layout/Header";
 import { Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner } from "@/components/ui";
@@ -122,6 +122,45 @@ export default function CustomersPage() {
   // PO import modal
   const [poPickerOpen, setPoPickerOpen] = useState(false);
   const [soFilterCustomer, setSoFilterCustomer] = useState("");
+
+  // Shipping modal
+  const [shipModal, setShipModal] = useState(false);
+  const [shipOrder, setShipOrder] = useState<any>(null);
+  const [shipForm, setShipForm] = useState({ carrier: "", tracking_number: "", ship_date: "" });
+
+  const openShipModal = (so: any) => {
+    setShipOrder(so);
+    setShipForm({
+      carrier: so.carrier || "",
+      tracking_number: so.tracking_number || "",
+      ship_date: so.ship_date || new Date().toISOString().split("T")[0],
+    });
+    setShipModal(true);
+  };
+
+  const handleShip = async () => {
+    if (!shipOrder) return;
+    try {
+      await updateSalesOrder(shipOrder.id, {
+        carrier: shipForm.carrier,
+        tracking_number: shipForm.tracking_number,
+        ship_date: shipForm.ship_date || null,
+        shipping_status: "shipped",
+      });
+      toast.success("Shipping info saved");
+      setShipModal(false);
+      setShipOrder(null);
+      loadAll();
+    } catch (err: any) { toast.error(err.message || "Failed"); }
+  };
+
+  const handleMarkDelivered = async (so: any) => {
+    try {
+      await updateSalesOrder(so.id, { shipping_status: "delivered" });
+      toast.success("Marked as delivered");
+      loadAll();
+    } catch (err: any) { toast.error(err.message || "Failed"); }
+  };
   const [poPickerSearch, setPoPickerSearch] = useState("");
   const [poDetail, setPoDetail] = useState<any>(null);
   const [poDetailLoading, setPoDetailLoading] = useState(false);
@@ -478,11 +517,20 @@ export default function CustomersPage() {
                                   <Badge color={so.status === "sold" ? "green" : "blue"}>
                                     {so.status === "sold" ? "SOLD" : "DRAFT"}
                                   </Badge>
+                                  {so.shipping_status === "shipped" && <Badge color="yellow">SHIPPED</Badge>}
+                                  {so.shipping_status === "delivered" && <Badge color="green">DELIVERED</Badge>}
                                 </div>
                                 <div className="text-[12px] text-gray-500 mt-1">
                                   {new Date(so.created_at).toLocaleDateString()}
                                   {so.sold_date && " | Sold " + new Date(so.sold_date).toLocaleDateString()}
                                 </div>
+                                {(so.carrier || so.tracking_number || so.ship_date) && (
+                                  <div className="text-[12px] text-gray-500 mt-0.5 flex items-center gap-2">
+                                    {so.carrier && <span>{so.carrier}</span>}
+                                    {so.tracking_number && <span className="text-brand">{so.tracking_number}</span>}
+                                    {so.ship_date && <span>Shipped {new Date(so.ship_date).toLocaleDateString()}</span>}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-[16px] text-gray-100">{formatCurrency(so.total_amount || 0)}</span>
@@ -491,6 +539,12 @@ export default function CustomersPage() {
                                     <Button size="sm" onClick={() => handleMarkSold(so)}>Mark Sold</Button>
                                     <Button size="sm" variant="ghost" onClick={() => handleDeleteSO(so)} className="!text-red-400">Del</Button>
                                   </>
+                                )}
+                                <Button size="sm" variant="ghost" onClick={() => openShipModal(so)}>
+                                  {so.shipping_status === "shipped" ? "Edit Ship" : "Ship"}
+                                </Button>
+                                {so.shipping_status === "shipped" && (
+                                  <Button size="sm" variant="ghost" onClick={() => handleMarkDelivered(so)} className="!text-green-400">Delivered</Button>
                                 )}
                               </div>
                             </div>
@@ -618,6 +672,42 @@ export default function CustomersPage() {
           <div className="flex justify-end gap-2.5 mt-6">
             <Button variant="secondary" onClick={() => setSoModal(false)}>Cancel</Button>
             <Button onClick={handleCreateSO}>Create Order</Button>
+          </div>
+        </Modal>
+
+        {/* SHIPPING MODAL */}
+        <Modal open={shipModal} onClose={() => { setShipModal(false); setShipOrder(null); }}
+          title={"Ship " + (shipOrder?.order_number || "Order")}>
+          <div className="space-y-4">
+            <Select label="Carrier" value={shipForm.carrier} onChange={(e) => setShipForm({ ...shipForm, carrier: e.target.value })}
+              options={[
+                { value: "", label: "Select carrier..." },
+                { value: "FedEx", label: "FedEx" },
+                { value: "UPS", label: "UPS" },
+                { value: "USPS", label: "USPS" },
+                { value: "DHL", label: "DHL" },
+                { value: "Hand Delivery", label: "Hand Delivery" },
+                { value: "Other", label: "Other" },
+              ]} />
+            <Input label="Tracking Number" value={shipForm.tracking_number}
+              onChange={(e) => setShipForm({ ...shipForm, tracking_number: e.target.value })}
+              placeholder="Enter tracking number..." />
+            <Input label="Ship Date" type="date" value={shipForm.ship_date}
+              onChange={(e) => setShipForm({ ...shipForm, ship_date: e.target.value })} />
+            {shipOrder?.line_items && shipOrder.line_items.length > 0 && (
+              <div className="border-t border-border pt-3">
+                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-2">Items in this order</div>
+                {shipOrder.line_items.map((li: any, idx: number) => (
+                  <div key={idx} className="text-[13px] text-gray-300 py-0.5">
+                    {li.product?.name || "Unknown"} x{li.quantity}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2.5 mt-6">
+            <Button variant="secondary" onClick={() => { setShipModal(false); setShipOrder(null); }}>Cancel</Button>
+            <Button onClick={handleShip}>Save Shipping Info</Button>
           </div>
         </Modal>
 
