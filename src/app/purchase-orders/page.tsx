@@ -380,7 +380,7 @@ export default function PurchaseOrdersPage() {
 
   // Memoize options for ComboBox
   const supplierOptions = useMemo(() => suppliers.filter((s) => !s.name.startsWith("**")).map((s) => ({ value: s.id, label: s.name })), [suppliers]);
-  const productOptions = useMemo(() => products.map((p) => ({ value: p.id, label: `${p.sku ? `[${p.sku}] ` : ""}${p.name}` })), [products]);
+  const productOptions = useMemo(() => products.map((p) => ({ value: p.id, label: `${p.sku && !p.sku.startsWith("NEW-") ? `[${p.sku}] ` : ""}${p.name}` })), [products]);
 
   if (loading) return <LoadingSpinner />;
 
@@ -565,7 +565,7 @@ export default function PurchaseOrdersPage() {
                         <div>
                           <div className="font-semibold text-[13px] text-gray-100">{item.product?.name || "Unknown"}</div>
                           <div className="text-[11px] text-gray-500">
-                            {item.product?.sku || ""} | {item.quantity} x {formatCurrency(item.unit_cost)}
+                            {item.product?.sku && !item.product.sku.startsWith("NEW-") ? item.product.sku + " | " : ""}{item.quantity} x {formatCurrency(item.unit_cost)}
                             {(item.received_qty || 0) > 0 && (item.received_qty || 0) < item.quantity && <span className="ml-2 text-amber-400">({item.received_qty}/{item.quantity} received)</span>}
                             {(item.received_qty || 0) >= item.quantity && item.quantity > 0 && <span className="ml-2 text-emerald-400">(received)</span>}
                           </div>

@@ -775,7 +775,7 @@ export default function CustomersPage() {
                     </div>
                     <div className="flex-1 cursor-pointer" onClick={() => togglePOItem(li.id)}>
                       <div className="text-[13px] text-gray-200">{li.product?.name || "Unknown"}</div>
-                      <div className="text-[11px] text-gray-500">{li.product?.sku || ""}</div>
+                      <div className="text-[11px] text-gray-500">{li.product?.sku && !li.product.sku.startsWith("NEW-") ? li.product.sku : ""}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <input
