@@ -165,6 +165,7 @@ export default function CustomersPage() {
   const [poDetail, setPoDetail] = useState<any>(null);
   const [poDetailLoading, setPoDetailLoading] = useState(false);
   const [poSelectedItems, setPoSelectedItems] = useState<Set<string>>(new Set());
+  const [poItemQtys, setPoItemQtys] = useState<Record<string, number>>({});
 
   const loadAll = async () => {
     try {
@@ -307,9 +308,12 @@ export default function CustomersPage() {
     try {
       const full = await getPurchaseOrder(poId);
       setPoDetail(full);
-      // Select all by default
       const allIds = new Set((full.line_items || []).map((li: any) => li.id));
       setPoSelectedItems(allIds);
+      // Initialize qty for each item to full PO quantity
+      const qtys: Record<string, number> = {};
+      for (const li of (full.line_items || [])) { qtys[li.id] = li.quantity; }
+      setPoItemQtys(qtys);
     } catch { toast.error("Failed to load PO"); }
     finally { setPoDetailLoading(false); }
   };
@@ -335,11 +339,11 @@ export default function CustomersPage() {
       .map((li: any) => ({
         productId: li.product_id || li.product?.id || "",
         productName: li.product?.name || "",
-        qty: String(li.quantity || 0),
+        qty: String(poItemQtys[li.id] || li.quantity || 0),
         unitCost: String(li.unit_cost || 0),
         poNumber: poDetail.po_number,
       }))
-      .filter((l: any) => l.productId);
+      .filter((l: any) => l.productId && parseInt(l.qty) > 0);
 
     // Remove empty first line if it exists
     let current = [...soLines];
@@ -758,27 +762,44 @@ export default function CustomersPage() {
                 </button>
               </div>
 
-              {/* Line items with checkboxes */}
+              {/* Line items with checkboxes and editable qty */}
               <div className="max-h-[350px] overflow-y-auto space-y-1">
                 {(poDetail.line_items || []).map((li: any) => (
                   <div key={li.id}
-                    onClick={() => togglePOItem(li.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer border transition-colors ${
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors ${
                       poSelectedItems.has(li.id) ? "border-brand bg-brand/5" : "border-border hover:bg-surface-hover"}`}>
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center text-[11px] font-bold ${
+                    <div onClick={() => togglePOItem(li.id)}
+                      className={`w-5 h-5 rounded border-2 flex items-center justify-center text-[11px] font-bold cursor-pointer shrink-0 ${
                       poSelectedItems.has(li.id) ? "border-brand bg-brand text-white" : "border-gray-600"}`}>
                       {poSelectedItems.has(li.id) ? "v" : ""}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 cursor-pointer" onClick={() => togglePOItem(li.id)}>
                       <div className="text-[13px] text-gray-200">{li.product?.name || "Unknown"}</div>
                       <div className="text-[11px] text-gray-500">{li.product?.sku || ""}</div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-[13px] text-gray-300">x{li.quantity}</div>
-                      <div className="text-[11px] text-gray-500">{formatCurrency(li.unit_cost)} ea</div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min="0" max={li.quantity}
+                        value={poItemQtys[li.id] ?? li.quantity}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          const val = Math.min(Math.max(0, parseInt(e.target.value) || 0), li.quantity);
+                          setPoItemQtys((prev) => ({ ...prev, [li.id]: val }));
+                          if (val > 0 && !poSelectedItems.has(li.id)) {
+                            setPoSelectedItems((prev) => new Set([...prev, li.id]));
+                          } else if (val === 0 && poSelectedItems.has(li.id)) {
+                            setPoSelectedItems((prev) => { const n = new Set(prev); n.delete(li.id); return n; });
+                          }
+                        }}
+                        className="w-16 bg-[#0B0F19] border border-border rounded px-2 py-1 text-[13px] text-gray-100 text-center focus:outline-none focus:border-brand"
+                      />
+                      <span className="text-[11px] text-gray-500">/ {li.quantity}</span>
                     </div>
-                    <div className="text-[13px] font-medium text-gray-200 w-24 text-right">
-                      {formatCurrency(li.quantity * li.unit_cost)}
+                    <div className="text-right w-20">
+                      <div className="text-[11px] text-gray-500">{formatCurrency(li.unit_cost)} ea</div>
+                      <div className="text-[13px] font-medium text-gray-200">
+                        {formatCurrency((poItemQtys[li.id] ?? li.quantity) * li.unit_cost)}
+                      </div>
                     </div>
                   </div>
                 ))}
