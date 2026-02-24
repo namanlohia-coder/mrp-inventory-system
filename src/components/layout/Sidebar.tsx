@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 const NAV_ITEMS = [
   { href: "/customers", label: "Customers", icon: "C" },
   { href: "/dashboard", label: "Dashboard", icon: "D" },
+  { href: "/for-customs", label: "For Customs", icon: "F" },
   { href: "/inventory", label: "Inventory", icon: "I" },
   { href: "/purchase-orders", label: "Purchase Orders", icon: "P" },
   { href: "/reports", label: "Reports", icon: "R" },
@@ -94,9 +95,3 @@ export function Sidebar() {
     </div>
   );
 }
-
-
-
-
-
-
