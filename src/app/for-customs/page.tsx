@@ -15,7 +15,6 @@ interface CustomsEntry {
   amount: number;
   po_number: string;
   type: string;
-  exemption: string;
   notes: string;
   created_at: string;
 }
@@ -26,18 +25,13 @@ const emptyForm = {
   amount: "",
   po_number: "",
   type: "",
-  exemption: "",
   notes: "",
 };
 
 const TYPE_OPTIONS = [
   { value: "", label: "Select type..." },
-  { value: "Import", label: "Import" },
-  { value: "Export", label: "Export" },
-  { value: "Duty", label: "Duty" },
-  { value: "Tariff", label: "Tariff" },
-  { value: "Brokerage", label: "Brokerage" },
-  { value: "Other", label: "Other" },
+  { value: "US Government", label: "US Government" },
+  { value: "International", label: "International" },
 ];
 
 export default function ForCustomsPage() {
@@ -88,7 +82,6 @@ export default function ForCustomsPage() {
         amount: parseFloat(form.amount) || 0,
         po_number: form.po_number,
         type: form.type,
-        exemption: form.exemption,
         notes: form.notes,
       });
       if (error) throw error;
@@ -109,7 +102,6 @@ export default function ForCustomsPage() {
       amount: String(entry.amount || ""),
       po_number: entry.po_number || "",
       type: entry.type || "",
-      exemption: entry.exemption || "",
       notes: entry.notes || "",
     });
     setEditModal(true);
@@ -127,7 +119,6 @@ export default function ForCustomsPage() {
           amount: parseFloat(form.amount) || 0,
           po_number: form.po_number,
           type: form.type,
-          exemption: form.exemption,
           notes: form.notes,
         })
         .eq("id", editingEntry.id);
@@ -171,7 +162,7 @@ export default function ForCustomsPage() {
       <Input label="Amount" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0.00" />
       <Input label="PO #" value={form.po_number} onChange={(e) => setForm({ ...form, po_number: e.target.value })} placeholder="PO number..." />
       <Select label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} options={TYPE_OPTIONS} />
-      <Input label="Exemption" value={form.exemption} onChange={(e) => setForm({ ...form, exemption: e.target.value })} placeholder="Exemption code or description..." />
+      <div />
       <div className="col-span-2">
         <Input label="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Additional notes..." />
       </div>
@@ -215,7 +206,6 @@ export default function ForCustomsPage() {
                   <th className="px-4 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
                   <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">PO #</th>
                   <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Type</th>
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Exemption</th>
                   <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
                   <th className="px-4 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                 </tr>
@@ -232,7 +222,6 @@ export default function ForCustomsPage() {
                     <td className="px-4 py-3.5 text-[13px]">
                       {entry.type ? <Badge>{entry.type}</Badge> : <span className="text-gray-500">-</span>}
                     </td>
-                    <td className="px-4 py-3.5 text-[13px] text-gray-400">{entry.exemption || "-"}</td>
                     <td className="px-4 py-3.5 text-[13px] text-gray-500 max-w-[200px] truncate">{entry.notes || "-"}</td>
                     <td className="px-4 py-3.5 text-right">
                       <div className="flex justify-end gap-1">
