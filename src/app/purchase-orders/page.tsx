@@ -292,11 +292,11 @@ export default function PurchaseOrdersPage() {
     const num = await getNextPONumber();
     setNextNum(num);
     setForm({ supplierId: suppliers[0]?.id || "", expectedDate: "", notes: "" });
-    setLineItems([{ productId: products[0]?.id || "", qty: "1", unitCost: String(products[0]?.cost || 0) }]);
+    setLineItems([{ productId: "", qty: "1", unitCost: "0" }]);
     setCreateModal(true);
   };
 
-  const addLineItem = () => { setLineItems([...lineItems, { productId: products[0]?.id || "", qty: "1", unitCost: "0" }]); };
+  const addLineItem = () => { setLineItems([...lineItems, { productId: "", qty: "1", unitCost: "0" }]); };
   const updateLineItem = (idx: number, field: string, val: string) => { setLineItems(lineItems.map((item, i) => (i === idx ? { ...item, [field]: val } : item))); };
   const removeLineItem = (idx: number) => { setLineItems(lineItems.filter((_, i) => i !== idx)); };
 
@@ -352,14 +352,20 @@ export default function PurchaseOrdersPage() {
     catch { toast.error("Failed to generate PDF"); }
   };
 
-  const openEditPO = (po: PurchaseOrder) => {
-    setEditingPO(po);
-    setEditForm({ supplierId: po.supplier_id || "", expectedDate: po.expected_date || "", notes: po.notes || "" });
-    setEditLineItems((po.line_items || []).map((item) => ({ productId: item.product_id, qty: String(item.quantity), unitCost: String(item.unit_cost) })));
-    setViewPO(null); setEditModal(true);
+  const openEditPO = async (po: PurchaseOrder) => {
+    // Always fetch full PO with all line items to ensure nothing is missing
+    try {
+      const fullPO = await getPurchaseOrder(po.id);
+      setEditingPO(fullPO);
+      setEditForm({ supplierId: fullPO.supplier_id || "", expectedDate: fullPO.expected_date || "", notes: fullPO.notes || "" });
+      setEditLineItems((fullPO.line_items || []).map((item) => ({ productId: item.product_id, qty: String(item.quantity), unitCost: String(item.unit_cost) })));
+      setViewPO(null); setEditModal(true);
+    } catch (err: any) {
+      toast.error("Failed to load PO for editing");
+    }
   };
 
-  const addEditLineItem = () => { setEditLineItems([...editLineItems, { productId: products[0]?.id || "", qty: "1", unitCost: "0" }]); };
+  const addEditLineItem = () => { setEditLineItems([...editLineItems, { productId: "", qty: "1", unitCost: "0" }]); };
   const updateEditLineItem = (idx: number, field: string, val: string) => { setEditLineItems(editLineItems.map((item, i) => (i === idx ? { ...item, [field]: val } : item))); };
   const removeEditLineItem = (idx: number) => { setEditLineItems(editLineItems.filter((_, i) => i !== idx)); };
 
