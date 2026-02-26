@@ -24,9 +24,10 @@ function fmtDate(d: string | null | undefined): string {
 }
 
 /* --------- COMBOBOX COMPONENT --------------------------------------------------------------- */
-function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, createLabel }: {
+function ComboBox({ label, value, displayLabel, onChange, options, onCreateNew, placeholder, createLabel }: {
   label?: string;
   value: string;
+  displayLabel?: string;
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
   onCreateNew: (name: string) => Promise<string>;
@@ -38,6 +39,7 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   const [creating, setCreating] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const current = options.find((o) => o.value === value);
+  const shownLabel = current?.label || displayLabel || "";
   const filtered = search
     ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
     : options;
@@ -76,9 +78,9 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
       {label && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">{label}</label>}
       <input
         type="text"
-        value={open ? search : (current?.label || "")}
+        value={open ? search : shownLabel}
         onChange={(e) => { setSearch(e.target.value); if (!open) setOpen(true); }}
-        onFocus={() => { setOpen(true); setSearch(current?.label || ""); }}
+        onFocus={() => { setOpen(true); setSearch(shownLabel); }}
         placeholder={placeholder || "Search or type to create..."}
         className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
       />
@@ -135,12 +137,12 @@ export default function PurchaseOrdersPage() {
 
   const [nextNum, setNextNum] = useState("");
   const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
-  const [lineItems, setLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
+  const [lineItems, setLineItems] = useState<{ productId: string; productName: string; qty: string; unitCost: string }[]>([]);
 
   const [editModal, setEditModal] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
   const [editForm, setEditForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
-  const [editLineItems, setEditLineItems] = useState<{ productId: string; qty: string; unitCost: string }[]>([]);
+  const [editLineItems, setEditLineItems] = useState<{ productId: string; productName: string; qty: string; unitCost: string }[]>([]);
 
   const [receiveModal, setReceiveModal] = useState(false);
   const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
@@ -292,11 +294,11 @@ export default function PurchaseOrdersPage() {
     const num = await getNextPONumber();
     setNextNum(num);
     setForm({ supplierId: suppliers[0]?.id || "", expectedDate: "", notes: "" });
-    setLineItems([{ productId: "", qty: "1", unitCost: "0" }]);
+    setLineItems([{ productId: "", productName: "", qty: "1", unitCost: "0" }]);
     setCreateModal(true);
   };
 
-  const addLineItem = () => { setLineItems([...lineItems, { productId: "", qty: "1", unitCost: "0" }]); };
+  const addLineItem = () => { setLineItems([...lineItems, { productId: "", productName: "", qty: "1", unitCost: "0" }]); };
   const updateLineItem = (idx: number, field: string, val: string) => { setLineItems(lineItems.map((item, i) => (i === idx ? { ...item, [field]: val } : item))); };
   const removeLineItem = (idx: number) => { setLineItems(lineItems.filter((_, i) => i !== idx)); };
 
@@ -353,19 +355,23 @@ export default function PurchaseOrdersPage() {
   };
 
   const openEditPO = async (po: PurchaseOrder) => {
-    // Always fetch full PO with all line items to ensure nothing is missing
     try {
       const fullPO = await getPurchaseOrder(po.id);
       setEditingPO(fullPO);
       setEditForm({ supplierId: fullPO.supplier_id || "", expectedDate: fullPO.expected_date || "", notes: fullPO.notes || "" });
-      setEditLineItems((fullPO.line_items || []).map((item) => ({ productId: item.product_id, qty: String(item.quantity), unitCost: String(item.unit_cost) })));
+      setEditLineItems((fullPO.line_items || []).map((item) => ({
+        productId: item.product_id || item.product?.id || "",
+        productName: item.product?.name || "",
+        qty: String(item.quantity || 0),
+        unitCost: String(item.unit_cost || 0),
+      })));
       setViewPO(null); setEditModal(true);
     } catch (err: any) {
       toast.error("Failed to load PO for editing");
     }
   };
 
-  const addEditLineItem = () => { setEditLineItems([...editLineItems, { productId: "", qty: "1", unitCost: "0" }]); };
+  const addEditLineItem = () => { setEditLineItems([...editLineItems, { productId: "", productName: "", qty: "1", unitCost: "0" }]); };
   const updateEditLineItem = (idx: number, field: string, val: string) => { setEditLineItems(editLineItems.map((item, i) => (i === idx ? { ...item, [field]: val } : item))); };
   const removeEditLineItem = (idx: number) => { setEditLineItems(editLineItems.filter((_, i) => i !== idx)); };
 
@@ -526,10 +532,13 @@ export default function PurchaseOrdersPage() {
               <ComboBox
                 label={i === 0 ? "Product" : undefined}
                 value={item.productId}
+                displayLabel={item.productName}
                 onChange={(val) => {
                   const prod = products.find((p) => p.id === val);
-                  updateLineItem(i, "productId", val);
-                  if (prod) updateLineItem(i, "unitCost", String(prod.cost));
+                  const updated = [...lineItems];
+                  updated[i] = { ...updated[i], productId: val, productName: prod?.name || "" };
+                  if (prod) updated[i].unitCost = String(prod.cost);
+                  setLineItems(updated);
                 }}
                 options={productOptions}
                 onCreateNew={handleCreateProduct}
@@ -646,10 +655,13 @@ export default function PurchaseOrdersPage() {
                   <ComboBox
                     label={i === 0 ? "Product" : undefined}
                     value={item.productId}
+                    displayLabel={item.productName}
                     onChange={(val) => {
                       const prod = products.find((p) => p.id === val);
-                      updateEditLineItem(i, "productId", val);
-                      if (prod) updateEditLineItem(i, "unitCost", String(prod.cost));
+                      const updated = [...editLineItems];
+                      updated[i] = { ...updated[i], productId: val, productName: prod?.name || "" };
+                      if (prod) updated[i].unitCost = String(prod.cost);
+                      setEditLineItems(updated);
                     }}
                     options={productOptions}
                     onCreateNew={handleCreateProduct}
