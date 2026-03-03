@@ -33,7 +33,7 @@ export default function LoginPage() {
           setError(authError.message);
         }
       } else {
-        window.location.href = "/dashboard";
+        window.location.href = "/purchase-orders";
       }
     } catch {
       setError("Login failed. Please try again.");
