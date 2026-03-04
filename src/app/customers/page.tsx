@@ -7,6 +7,7 @@ import {
   getProducts, createProduct, getSalesOrders, getNextSONumber, createSalesOrder,
   markSalesOrderSold, deleteSalesOrder, updateSalesOrder, getPurchaseOrders, getPurchaseOrder,
 } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 import { Header } from "@/components/layout/Header";
 import { Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner } from "@/components/ui";
 import { formatCurrency } from "@/lib/utils";
@@ -93,8 +94,21 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   );
 }
 
+// --- COST ENTRY TYPE ---
+interface CostEntry {
+  id: string;
+  customer_id: string;
+  date: string;
+  name: string;
+  amount: number;
+  po_number: string;
+  notes: string;
+  created_at: string;
+}
+
 // --- MAIN PAGE ---
 const emptyCustomerForm = { name: "", email: "", phone: "", address: "", notes: "" };
+const emptyCostForm = { customer_id: "", date: new Date().toISOString().split("T")[0], name: "", amount: "", po_number: "", notes: "" };
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -103,7 +117,7 @@ export default function CustomersPage() {
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState<"customers" | "sales">("customers");
+  const [activeTab, setActiveTab] = useState<"customers" | "sales" | "costs">("customers");
   const [search, setSearch] = useState("");
 
   // Customer modals
@@ -127,6 +141,14 @@ export default function CustomersPage() {
   const [shipModal, setShipModal] = useState(false);
   const [shipOrder, setShipOrder] = useState<any>(null);
   const [shipForm, setShipForm] = useState({ carrier: "", tracking_number: "", ship_date: "" });
+
+  // Cost entries state
+  const [costEntries, setCostEntries] = useState<CostEntry[]>([]);
+  const [addCostModal, setAddCostModal] = useState(false);
+  const [editCostModal, setEditCostModal] = useState(false);
+  const [editingCost, setEditingCost] = useState<CostEntry | null>(null);
+  const [costForm, setCostForm] = useState(emptyCostForm);
+  const [costFilterCustomer, setCostFilterCustomer] = useState("");
 
   const openShipModal = (so: any) => {
     setShipOrder(so);
@@ -167,6 +189,20 @@ export default function CustomersPage() {
   const [poSelectedItems, setPoSelectedItems] = useState<Set<string>>(new Set());
   const [poItemQtys, setPoItemQtys] = useState<Record<string, number>>({});
 
+  const loadCostEntries = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("customer_costs")
+        .select("*")
+        .order("date", { ascending: false });
+      if (error) throw error;
+      setCostEntries(data || []);
+    } catch (err: any) {
+      // Table might not exist yet - that's ok
+      setCostEntries([]);
+    }
+  };
+
   const loadAll = async () => {
     try {
       const [cust, prods, orders, pos] = await Promise.all([
@@ -176,6 +212,7 @@ export default function CustomersPage() {
       setProducts(prods);
       setSalesOrders(orders);
       setPurchaseOrders(pos);
+      await loadCostEntries();
     } catch { toast.error("Failed to load data"); }
     finally { setLoading(false); }
   };
@@ -389,6 +426,115 @@ export default function CustomersPage() {
     catch { toast.error("Failed"); }
   };
 
+  // --- COST ENTRIES ---
+  const handleAddCost = async () => {
+    if (!costForm.customer_id) return toast.error("Select a customer");
+    if (!costForm.name) return toast.error("Name/description is required");
+    if (!costForm.date) return toast.error("Date is required");
+    try {
+      const { error } = await supabase.from("customer_costs").insert({
+        customer_id: costForm.customer_id,
+        date: costForm.date,
+        name: costForm.name,
+        amount: parseFloat(costForm.amount) || 0,
+        po_number: costForm.po_number,
+        notes: costForm.notes,
+      });
+      if (error) throw error;
+      toast.success("Cost entry added");
+      setAddCostModal(false);
+      setCostForm(emptyCostForm);
+      loadCostEntries();
+    } catch (err: any) { toast.error(err.message || "Failed to add cost"); }
+  };
+
+  const openEditCost = (entry: CostEntry) => {
+    setEditingCost(entry);
+    setCostForm({
+      customer_id: entry.customer_id || "",
+      date: entry.date || "",
+      name: entry.name || "",
+      amount: String(entry.amount || ""),
+      po_number: entry.po_number || "",
+      notes: entry.notes || "",
+    });
+    setEditCostModal(true);
+  };
+
+  const handleEditCost = async () => {
+    if (!editingCost) return;
+    if (!costForm.customer_id) return toast.error("Select a customer");
+    if (!costForm.name) return toast.error("Name is required");
+    try {
+      const { error } = await supabase
+        .from("customer_costs")
+        .update({
+          customer_id: costForm.customer_id,
+          date: costForm.date,
+          name: costForm.name,
+          amount: parseFloat(costForm.amount) || 0,
+          po_number: costForm.po_number,
+          notes: costForm.notes,
+        })
+        .eq("id", editingCost.id);
+      if (error) throw error;
+      toast.success("Cost entry updated");
+      setEditCostModal(false);
+      setEditingCost(null);
+      setCostForm(emptyCostForm);
+      loadCostEntries();
+    } catch (err: any) { toast.error(err.message || "Failed to update"); }
+  };
+
+  const handleDeleteCost = async (entry: CostEntry) => {
+    if (!confirm(`Delete cost entry "${entry.name}"?`)) return;
+    try {
+      const { error } = await supabase.from("customer_costs").delete().eq("id", entry.id);
+      if (error) throw error;
+      toast.success("Cost entry deleted");
+      loadCostEntries();
+    } catch { toast.error("Failed to delete"); }
+  };
+
+  // Profit calculations
+  const profitByCustomer = useMemo(() => {
+    const data: Record<string, { name: string; revenue: number; costs: number; costEntries: number; orders: number }> = {};
+    // Revenue from sold sales orders
+    for (const so of salesOrders) {
+      const custId = so.customer_id;
+      const custName = so.customer?.name || "Unknown";
+      if (!data[custId]) data[custId] = { name: custName, revenue: 0, costs: 0, costEntries: 0, orders: 0 };
+      if (so.status === "sold") data[custId].revenue += so.total_amount || 0;
+      data[custId].orders += 1;
+    }
+    // Costs from cost entries
+    for (const ce of costEntries) {
+      const custId = ce.customer_id;
+      if (!data[custId]) {
+        const cust = customers.find((c) => c.id === custId);
+        data[custId] = { name: cust?.name || "Unknown", revenue: 0, costs: 0, costEntries: 0, orders: 0 };
+      }
+      data[custId].costs += ce.amount || 0;
+      data[custId].costEntries += 1;
+    }
+    return data;
+  }, [salesOrders, costEntries, customers]);
+
+  const filteredCosts = useMemo(() => {
+    let result = costEntries;
+    if (costFilterCustomer) result = result.filter((e) => e.customer_id === costFilterCustomer);
+    if (search) {
+      result = result.filter((e) =>
+        e.name.toLowerCase().includes(search.toLowerCase()) ||
+        (e.po_number || "").toLowerCase().includes(search.toLowerCase()) ||
+        (e.notes || "").toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    return result;
+  }, [costEntries, costFilterCustomer, search]);
+
+  const totalCosts = filteredCosts.reduce((s, e) => s + (e.amount || 0), 0);
+
   const renderCustForm = () => (
     <div className="grid grid-cols-2 gap-4">
       <Input label="Customer Name" value={custForm.name} onChange={(e) => setCustForm({ ...custForm, name: e.target.value })} />
@@ -397,6 +543,26 @@ export default function CustomersPage() {
       <Input label="Address" value={custForm.address} onChange={(e) => setCustForm({ ...custForm, address: e.target.value })} />
       <div className="col-span-2">
         <Input label="Notes" value={custForm.notes} onChange={(e) => setCustForm({ ...custForm, notes: e.target.value })} />
+      </div>
+    </div>
+  );
+
+  const renderCostForm = () => (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="col-span-2">
+        <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">Customer</label>
+        <select value={costForm.customer_id} onChange={(e) => setCostForm({ ...costForm, customer_id: e.target.value })}
+          className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-2 text-[13px] text-gray-100 focus:outline-none focus:border-brand">
+          <option value="">Select customer...</option>
+          {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <Input label="Date" type="date" value={costForm.date} onChange={(e) => setCostForm({ ...costForm, date: e.target.value })} />
+      <Input label="Name / Description" value={costForm.name} onChange={(e) => setCostForm({ ...costForm, name: e.target.value })} placeholder="e.g. Parts, shipping, customs..." />
+      <Input label="Amount" type="number" step="0.01" value={costForm.amount} onChange={(e) => setCostForm({ ...costForm, amount: e.target.value })} placeholder="0.00" />
+      <Input label="PO #" value={costForm.po_number} onChange={(e) => setCostForm({ ...costForm, po_number: e.target.value })} placeholder="PO number..." />
+      <div className="col-span-2">
+        <Input label="Notes" value={costForm.notes} onChange={(e) => setCostForm({ ...costForm, notes: e.target.value })} placeholder="Additional notes..." />
       </div>
     </div>
   );
@@ -410,23 +576,26 @@ export default function CustomersPage() {
         {/* Tabs */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex gap-2">
-            {(["customers", "sales"] as const).map((t) => (
+            {(["customers", "sales", "costs"] as const).map((t) => (
               <button key={t} onClick={() => { setActiveTab(t); setSearch(""); }}
                 className={`px-4 py-2 rounded-lg text-[13px] font-medium border transition-all cursor-pointer ${
                   activeTab === t ? "bg-brand/20 border-brand text-brand" : "bg-surface-card border-border text-gray-400 hover:border-border-light"}`}>
-                {t === "customers" ? "Customers (" + customers.length + ")" : "Sales Orders (" + salesOrders.length + ")"}
+                {t === "customers" ? "Customers (" + customers.length + ")"
+                  : t === "sales" ? "Sales Orders (" + salesOrders.length + ")"
+                  : "Costs & Profit"}
               </button>
             ))}
           </div>
           <div className="flex gap-2">
             {activeTab === "customers" && <Button onClick={() => { setCustForm(emptyCustomerForm); setAddCustModal(true); }}>+ Add Customer</Button>}
             {activeTab === "sales" && <Button onClick={openCreateSO}>+ New Sales Order</Button>}
+            {activeTab === "costs" && <Button onClick={() => { setCostForm(emptyCostForm); setAddCostModal(true); }}>+ Add Cost</Button>}
           </div>
         </div>
 
         {/* Search */}
         <div className="mb-5">
-          <input type="text" placeholder={activeTab === "customers" ? "Search customers..." : "Search orders..."}
+          <input type="text" placeholder={activeTab === "customers" ? "Search customers..." : activeTab === "sales" ? "Search orders..." : "Search costs..."}
             value={search} onChange={(e) => setSearch(e.target.value)}
             className="w-full max-w-xs bg-[#0B0F19] border border-border rounded-lg px-3.5 py-2 text-[13px] text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-brand" />
         </div>
@@ -584,6 +753,139 @@ export default function CustomersPage() {
           );
         })()}
 
+        {/* COSTS & PROFIT TAB */}
+        {activeTab === "costs" && (
+          <div className="space-y-6">
+            {/* Profit Summary Cards */}
+            {(() => {
+              const profitEntries = Object.entries(profitByCustomer)
+                .filter(([id]) => !costFilterCustomer || id === costFilterCustomer)
+                .sort((a, b) => a[1].name.localeCompare(b[1].name));
+              const totalRevenue = profitEntries.reduce((s, [, d]) => s + d.revenue, 0);
+              const totalCost = profitEntries.reduce((s, [, d]) => s + d.costs, 0);
+              const totalProfit = totalRevenue - totalCost;
+
+              return (
+                <>
+                  {/* Overall summary */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-surface-card border border-border rounded-[14px] p-5">
+                      <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Total Revenue (Sold)</div>
+                      <div className="text-[22px] font-bold text-gray-100">{formatCurrency(totalRevenue)}</div>
+                    </div>
+                    <div className="bg-surface-card border border-border rounded-[14px] p-5">
+                      <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Total Costs</div>
+                      <div className="text-[22px] font-bold text-red-400">{formatCurrency(totalCost)}</div>
+                    </div>
+                    <div className="bg-surface-card border border-border rounded-[14px] p-5">
+                      <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Profit</div>
+                      <div className={`text-[22px] font-bold ${totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {formatCurrency(totalProfit)}
+                      </div>
+                      {totalRevenue > 0 && (
+                        <div className="text-[12px] text-gray-500 mt-0.5">
+                          {((totalProfit / totalRevenue) * 100).toFixed(1)}% margin
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Per-customer profit breakdown */}
+                  {profitEntries.length > 0 && (
+                    <div className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Customer</th>
+                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
+                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Costs</th>
+                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Profit</th>
+                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Margin</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {profitEntries.map(([custId, d]) => {
+                            const profit = d.revenue - d.costs;
+                            const margin = d.revenue > 0 ? ((profit / d.revenue) * 100).toFixed(1) : "-";
+                            return (
+                              <tr key={custId} className="border-b border-border hover:bg-surface-hover transition-colors">
+                                <td className="px-4 py-3 text-[13px] text-gray-100 font-medium">{d.name}</td>
+                                <td className="px-4 py-3 text-[13px] text-gray-300 text-right">{formatCurrency(d.revenue)}</td>
+                                <td className="px-4 py-3 text-[13px] text-red-400 text-right">{formatCurrency(d.costs)}</td>
+                                <td className={`px-4 py-3 text-[13px] font-bold text-right ${profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                  {formatCurrency(profit)}
+                                </td>
+                                <td className="px-4 py-3 text-[13px] text-gray-500 text-right">{margin}{margin !== "-" ? "%" : ""}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
+            {/* Cost entries filter + total */}
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <select value={costFilterCustomer} onChange={(e) => setCostFilterCustomer(e.target.value)}
+                  className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand">
+                  <option value="">All Customers</option>
+                  {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <span className="text-[13px] text-gray-400">{filteredCosts.length} cost entr{filteredCosts.length !== 1 ? "ies" : "y"}</span>
+                <span className="text-[14px] font-bold text-brand">{formatCurrency(totalCosts)}</span>
+              </div>
+            </div>
+
+            {/* Cost entries table */}
+            {filteredCosts.length > 0 ? (
+              <div className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Customer</th>
+                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Name / Description</th>
+                      <th className="px-4 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">PO #</th>
+                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
+                      <th className="px-4 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCosts.map((entry) => {
+                      const cust = customers.find((c) => c.id === entry.customer_id);
+                      return (
+                        <tr key={entry.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="px-4 py-3.5 text-[13px] text-gray-300 whitespace-nowrap">
+                            {entry.date ? new Date(entry.date).toLocaleDateString("en-US", { timeZone: "UTC" }) : "-"}
+                          </td>
+                          <td className="px-4 py-3.5 text-[13px] text-gray-100 font-medium">{cust?.name || "Unknown"}</td>
+                          <td className="px-4 py-3.5 text-[13px] text-gray-300">{entry.name}</td>
+                          <td className="px-4 py-3.5 text-[13px] text-gray-100 font-bold text-right">{formatCurrency(entry.amount || 0)}</td>
+                          <td className="px-4 py-3.5 text-[13px] text-gray-400 font-mono">{entry.po_number || "-"}</td>
+                          <td className="px-4 py-3.5 text-[13px] text-gray-500 max-w-[200px] truncate">{entry.notes || "-"}</td>
+                          <td className="px-4 py-3.5 text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => openEditCost(entry)}>Edit</Button>
+                              <Button size="sm" variant="ghost" onClick={() => handleDeleteCost(entry)} className="!text-red-400">Del</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon="$" title="No cost entries" sub="Add your first cost entry to start tracking profitability" />
+            )}
+          </div>
+        )}
+
         {/* ADD CUSTOMER */}
         <Modal open={addCustModal} onClose={() => setAddCustModal(false)} title="Add Customer">
           {renderCustForm()}
@@ -599,6 +901,24 @@ export default function CustomersPage() {
           <div className="flex justify-end gap-2.5 mt-6">
             <Button variant="secondary" onClick={() => { setEditCustModal(false); setEditingCust(null); }}>Cancel</Button>
             <Button onClick={handleEditCustomer}>Save Changes</Button>
+          </div>
+        </Modal>
+
+        {/* ADD COST */}
+        <Modal open={addCostModal} onClose={() => setAddCostModal(false)} title="Add Cost Entry">
+          {renderCostForm()}
+          <div className="flex justify-end gap-2.5 mt-6">
+            <Button variant="secondary" onClick={() => setAddCostModal(false)}>Cancel</Button>
+            <Button onClick={handleAddCost}>Add Cost</Button>
+          </div>
+        </Modal>
+
+        {/* EDIT COST */}
+        <Modal open={editCostModal} onClose={() => { setEditCostModal(false); setEditingCost(null); }} title="Edit Cost Entry">
+          {renderCostForm()}
+          <div className="flex justify-end gap-2.5 mt-6">
+            <Button variant="secondary" onClick={() => { setEditCostModal(false); setEditingCost(null); }}>Cancel</Button>
+            <Button onClick={handleEditCost}>Save Changes</Button>
           </div>
         </Modal>
 
