@@ -148,6 +148,10 @@ export default function PurchaseOrdersPage() {
   const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
   const [receiveQtys, setReceiveQtys] = useState<Record<string, string>>({});
 
+  /* --------- QUOTE UPLOAD STATE --------- */
+  const [quoteUploading, setQuoteUploading] = useState(false);
+  const quoteFileRef = useRef<HTMLInputElement>(null);
+
   const load = async (status?: string) => {
     const activeStatus = status || filterStatus;
     try {
@@ -392,6 +396,153 @@ export default function PurchaseOrdersPage() {
     catch (err: any) { toast.error(err.message || "Failed to duplicate PO"); }
   };
 
+  /* --------- QUOTE PDF UPLOAD & PARSE --------- */
+  const handleQuoteUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      toast.error("Please upload a PDF file");
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("File too large (max 20MB)");
+      return;
+    }
+
+    setQuoteUploading(true);
+    const loadingToast = toast.loading("Parsing quote with AI...");
+
+    try {
+      // Convert PDF to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]); // Remove data:application/pdf;base64, prefix
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+
+      // Call our API route
+      const response = await fetch("/api/parse-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdfBase64: base64 }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to parse quote");
+      }
+
+      const parsed = await response.json();
+
+      // Match or create supplier
+      let supplierId = "";
+      if (parsed.supplier_name) {
+        const normalizedName = parsed.supplier_name.trim().toLowerCase();
+        const existingSupplier = suppliers.find(
+          (s) => s.name.toLowerCase() === normalizedName ||
+                 s.name.toLowerCase().includes(normalizedName) ||
+                 normalizedName.includes(s.name.toLowerCase())
+        );
+        if (existingSupplier) {
+          supplierId = existingSupplier.id;
+        } else {
+          // Create new supplier
+          supplierId = await handleCreateSupplier(parsed.supplier_name.trim());
+        }
+      }
+
+      // Build notes
+      let notes = "";
+      if (parsed.quote_number) notes += `Quote: ${parsed.quote_number}`;
+      if (parsed.notes) notes += notes ? ` | ${parsed.notes}` : parsed.notes;
+
+      // Set form fields
+      setForm({
+        supplierId: supplierId || form.supplierId,
+        expectedDate: parsed.expected_date || form.expectedDate,
+        notes: notes || form.notes,
+      });
+
+      // Match or create products for each line item
+      const newLineItems: { productId: string; productName: string; qty: string; unitCost: string }[] = [];
+
+      for (const item of parsed.line_items || []) {
+        let productId = "";
+        let productName = item.product_name || "Unknown Product";
+
+        // Try to match by SKU first
+        if (item.sku) {
+          const bySku = products.find(
+            (p) => p.sku && p.sku.toLowerCase() === item.sku.toLowerCase()
+          );
+          if (bySku) {
+            productId = bySku.id;
+            productName = bySku.name;
+          }
+        }
+
+        // If no SKU match, try fuzzy name match
+        if (!productId) {
+          const normalizedName = productName.trim().toLowerCase();
+          const byName = products.find(
+            (p) => p.name.toLowerCase() === normalizedName ||
+                   p.name.toLowerCase().includes(normalizedName) ||
+                   normalizedName.includes(p.name.toLowerCase())
+          );
+          if (byName) {
+            productId = byName.id;
+            productName = byName.name;
+          }
+        }
+
+        // If still no match, create new product
+        if (!productId) {
+          const autoSku = item.sku || ("NEW-" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 5).toUpperCase());
+          const newProd = await createProduct({
+            name: productName,
+            sku: autoSku,
+            category: "General",
+            unit: "pcs",
+            stock: 0,
+            cost: item.unit_cost || 0,
+            price: 0,
+            reorder_point: 0,
+            image: "",
+            is_active: true,
+          } as any);
+          setProducts((prev) => [...prev, newProd].sort((a, b) => a.name.localeCompare(b.name)));
+          productId = newProd.id;
+          productName = newProd.name;
+        }
+
+        newLineItems.push({
+          productId,
+          productName,
+          qty: String(item.quantity || 1),
+          unitCost: String(item.unit_cost || 0),
+        });
+      }
+
+      if (newLineItems.length > 0) {
+        setLineItems(newLineItems);
+      }
+
+      toast.dismiss(loadingToast);
+      toast.success(`Parsed ${newLineItems.length} line items from quote`);
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err.message || "Failed to parse quote");
+    } finally {
+      setQuoteUploading(false);
+      // Reset file input so same file can be re-uploaded
+      if (quoteFileRef.current) quoteFileRef.current.value = "";
+    }
+  };
+
   const lineTotal = lineItems.reduce((s, i) => s + (parseFloat(i.qty) || 0) * (parseFloat(i.unitCost) || 0), 0);
 
   // Memoize options for ComboBox
@@ -512,7 +663,35 @@ export default function PurchaseOrdersPage() {
 
         {/* --------- CREATE MODAL --------- */}
         <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create Purchase Order" className="w-[90vw] max-w-[1100px]">
-          <div className="text-xs text-gray-500 font-mono mb-5">{nextNum}</div>
+          <div className="flex justify-between items-center mb-5">
+            <div className="text-xs text-gray-500 font-mono">{nextNum}</div>
+            {/* QUOTE UPLOAD BUTTON */}
+            <div>
+              <input
+                ref={quoteFileRef}
+                type="file"
+                accept="application/pdf"
+                onChange={handleQuoteUpload}
+                className="hidden"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => quoteFileRef.current?.click()}
+                disabled={quoteUploading}
+              >
+                {quoteUploading ? (
+                  <>
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin mr-1.5" />
+                    Parsing quote...
+                  </>
+                ) : (
+                  "📄 Upload Quote PDF"
+                )}
+              </Button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4 mb-6">
             <ComboBox
               label="Supplier"
