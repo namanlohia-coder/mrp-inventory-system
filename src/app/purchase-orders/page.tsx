@@ -474,11 +474,16 @@ export default function PurchaseOrdersPage() {
         let productId = "";
         let productName = item.product_name || "Unknown Product";
 
-        // Try to match by SKU first
+        // Try to match by SKU first (flexible: checks if either contains the other)
         if (item.sku) {
-          const bySku = products.find(
-            (p) => p.sku && p.sku.toLowerCase() === item.sku.toLowerCase()
-          );
+          const skuLower = item.sku.toLowerCase().replace(/[\[\]]/g, "");
+          const bySku = products.find((p) => {
+            if (!p.sku) return false;
+            const pSkuLower = p.sku.toLowerCase().replace(/[\[\]]/g, "");
+            return pSkuLower === skuLower ||
+                   pSkuLower.includes(skuLower) ||
+                   skuLower.includes(pSkuLower);
+          });
           if (bySku) {
             productId = bySku.id;
             productName = bySku.name;
@@ -499,24 +504,30 @@ export default function PurchaseOrdersPage() {
           }
         }
 
-        // If still no match, create new product
+        // If still no match, create new product (always use NEW- prefix to avoid duplicate SKU errors)
         if (!productId) {
-          const autoSku = item.sku || ("NEW-" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 5).toUpperCase());
-          const newProd = await createProduct({
-            name: productName,
-            sku: autoSku,
-            category: "General",
-            unit: "pcs",
-            stock: 0,
-            cost: item.unit_cost || 0,
-            price: 0,
-            reorder_point: 0,
-            image: "",
-            is_active: true,
-          } as any);
-          setProducts((prev) => [...prev, newProd].sort((a, b) => a.name.localeCompare(b.name)));
-          productId = newProd.id;
-          productName = newProd.name;
+          const autoSku = "NEW-" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 5).toUpperCase();
+          try {
+            const newProd = await createProduct({
+              name: productName,
+              sku: autoSku,
+              category: "General",
+              unit: "pcs",
+              stock: 0,
+              cost: item.unit_cost || 0,
+              price: 0,
+              reorder_point: 0,
+              image: "",
+              is_active: true,
+            } as any);
+            setProducts((prev) => [...prev, newProd].sort((a, b) => a.name.localeCompare(b.name)));
+            productId = newProd.id;
+            productName = newProd.name;
+          } catch (createErr: any) {
+            // If creation fails (e.g. duplicate), skip this line item
+            toast.error(`Could not create product: ${productName}`);
+            continue;
+          }
         }
 
         newLineItems.push({
