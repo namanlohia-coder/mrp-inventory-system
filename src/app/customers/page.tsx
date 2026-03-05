@@ -733,6 +733,58 @@ export default function CustomersPage() {
                                 ))}
                               </div>
                             )}
+                            {/* COSTS FOR THIS ORDER */}
+                            {(() => {
+                              const orderCosts = costEntries.filter(
+                                (ce) => ce.customer_id === so.customer_id && ce.order_reference === so.order_number
+                              );
+                              const costTotal = orderCosts.reduce((s, ce) => s + (ce.amount || 0), 0);
+                              return (
+                                <>
+                                  {orderCosts.length > 0 && (
+                                    <div className="mt-3 border-t border-border pt-3">
+                                      <div className="text-[11px] text-gray-500 uppercase tracking-wide font-semibold mb-2">Costs</div>
+                                      {orderCosts.sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((ce) => (
+                                        <div key={ce.id} className="flex justify-between items-center py-1.5 text-[13px]">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-gray-300">{ce.name}</span>
+                                            {ce.po_number && (
+                                              <span className="text-[11px] text-gray-500 bg-surface rounded px-1.5 py-0.5 font-mono">{ce.po_number}</span>
+                                            )}
+                                            <span className="text-[11px] text-gray-600">
+                                              {ce.date ? new Date(ce.date).toLocaleDateString("en-US", { timeZone: "UTC" }) : ""}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-3">
+                                            <span className="text-red-400 font-medium">{formatCurrency(ce.amount || 0)}</span>
+                                            <Button size="sm" variant="ghost" onClick={() => openEditCost(ce)}>Edit</Button>
+                                            <Button size="sm" variant="ghost" onClick={() => handleDeleteCost(ce)} className="!text-red-400">Del</Button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                      <div className="flex justify-end pt-1.5 text-[12px] text-red-400 font-semibold">
+                                        Total Costs: {formatCurrency(costTotal)}
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div className="mt-2 flex justify-end">
+                                    <button
+                                      onClick={() => {
+                                        setCostForm({
+                                          ...emptyCostForm,
+                                          customer_id: so.customer_id,
+                                          order_reference: so.order_number,
+                                        });
+                                        setAddCostModal(true);
+                                      }}
+                                      className="text-[11px] text-gray-500 hover:text-brand bg-transparent border border-border rounded-lg px-2.5 py-1 cursor-pointer hover:border-brand/30 transition-colors"
+                                    >
+                                      + Add Cost
+                                    </button>
+                                  </div>
+                                </>
+                              );
+                            })()}
                             {so.notes && <div className="text-[11px] text-gray-500 mt-2 italic">{so.notes}</div>}
                           </div>
                         ))}
