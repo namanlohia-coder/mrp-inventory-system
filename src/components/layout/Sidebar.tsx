@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 
 const NAV_ITEMS = [
-  { href: "/cogs", label: "COGS", icon: "$" },
   { href: "/customers", label: "Customers", icon: "C" },
   { href: "/for-customs", label: "For Customs", icon: "F" },
   { href: "/inventory", label: "Inventory", icon: "I" },
