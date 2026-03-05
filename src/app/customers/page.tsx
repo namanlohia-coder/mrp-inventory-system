@@ -101,6 +101,7 @@ interface CostEntry {
   date: string;
   name: string;
   amount: number;
+  order_reference: string;
   po_number: string;
   notes: string;
   created_at: string;
@@ -108,7 +109,7 @@ interface CostEntry {
 
 // --- MAIN PAGE ---
 const emptyCustomerForm = { name: "", email: "", phone: "", address: "", notes: "" };
-const emptyCostForm = { customer_id: "", date: new Date().toISOString().split("T")[0], name: "", amount: "", po_number: "", notes: "" };
+const emptyCostForm = { customer_id: "", date: new Date().toISOString().split("T")[0], name: "", amount: "", order_reference: "", po_number: "", notes: "" };
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -437,6 +438,7 @@ export default function CustomersPage() {
         date: costForm.date,
         name: costForm.name,
         amount: parseFloat(costForm.amount) || 0,
+        order_reference: costForm.order_reference,
         po_number: costForm.po_number,
         notes: costForm.notes,
       });
@@ -455,6 +457,7 @@ export default function CustomersPage() {
       date: entry.date || "",
       name: entry.name || "",
       amount: String(entry.amount || ""),
+      order_reference: entry.order_reference || "",
       po_number: entry.po_number || "",
       notes: entry.notes || "",
     });
@@ -473,6 +476,7 @@ export default function CustomersPage() {
           date: costForm.date,
           name: costForm.name,
           amount: parseFloat(costForm.amount) || 0,
+          order_reference: costForm.order_reference,
           po_number: costForm.po_number,
           notes: costForm.notes,
         })
@@ -496,44 +500,32 @@ export default function CustomersPage() {
     } catch { toast.error("Failed to delete"); }
   };
 
-  // Profit calculations
-  const profitByCustomer = useMemo(() => {
-    const data: Record<string, { name: string; revenue: number; costs: number; costEntries: number; orders: number }> = {};
-    // Revenue from sold sales orders
-    for (const so of salesOrders) {
-      const custId = so.customer_id;
-      const custName = so.customer?.name || "Unknown";
-      if (!data[custId]) data[custId] = { name: custName, revenue: 0, costs: 0, costEntries: 0, orders: 0 };
-      if (so.status === "sold") data[custId].revenue += so.total_amount || 0;
-      data[custId].orders += 1;
-    }
-    // Costs from cost entries
-    for (const ce of costEntries) {
-      const custId = ce.customer_id;
-      if (!data[custId]) {
-        const cust = customers.find((c) => c.id === custId);
-        data[custId] = { name: cust?.name || "Unknown", revenue: 0, costs: 0, costEntries: 0, orders: 0 };
-      }
-      data[custId].costs += ce.amount || 0;
-      data[custId].costEntries += 1;
-    }
-    return data;
-  }, [salesOrders, costEntries, customers]);
-
-  const filteredCosts = useMemo(() => {
-    let result = costEntries;
-    if (costFilterCustomer) result = result.filter((e) => e.customer_id === costFilterCustomer);
-    if (search) {
-      result = result.filter((e) =>
+  // Group costs by customer then by order_reference
+  const costsByCustomer = useMemo(() => {
+    let filtered = costEntries;
+    if (costFilterCustomer) filtered = filtered.filter((e) => e.customer_id === costFilterCustomer);
+    if (search && activeTab === "costs") {
+      filtered = filtered.filter((e) =>
         e.name.toLowerCase().includes(search.toLowerCase()) ||
+        (e.order_reference || "").toLowerCase().includes(search.toLowerCase()) ||
         (e.po_number || "").toLowerCase().includes(search.toLowerCase()) ||
         (e.notes || "").toLowerCase().includes(search.toLowerCase())
       );
     }
-    return result;
-  }, [costEntries, costFilterCustomer, search]);
+    const grouped: Record<string, { name: string; orders: Record<string, CostEntry[]>; total: number }> = {};
+    for (const entry of filtered) {
+      const custId = entry.customer_id || "none";
+      const cust = customers.find((c) => c.id === custId);
+      if (!grouped[custId]) grouped[custId] = { name: cust?.name || "Unknown", orders: {}, total: 0 };
+      const orderKey = entry.order_reference || "No Order Reference";
+      if (!grouped[custId].orders[orderKey]) grouped[custId].orders[orderKey] = [];
+      grouped[custId].orders[orderKey].push(entry);
+      grouped[custId].total += entry.amount || 0;
+    }
+    return grouped;
+  }, [costEntries, costFilterCustomer, search, customers, activeTab]);
 
-  const totalCosts = filteredCosts.reduce((s, e) => s + (e.amount || 0), 0);
+  const grandTotal = useMemo(() => Object.values(costsByCustomer).reduce((s, g) => s + g.total, 0), [costsByCustomer]);
 
   const renderCustForm = () => (
     <div className="grid grid-cols-2 gap-4">
@@ -557,10 +549,11 @@ export default function CustomersPage() {
           {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
+      <Input label="Order / Reference" value={costForm.order_reference} onChange={(e) => setCostForm({ ...costForm, order_reference: e.target.value })} placeholder="e.g. SO-1001, Invoice #123..." />
       <Input label="Date" type="date" value={costForm.date} onChange={(e) => setCostForm({ ...costForm, date: e.target.value })} />
-      <Input label="Name / Description" value={costForm.name} onChange={(e) => setCostForm({ ...costForm, name: e.target.value })} placeholder="e.g. Parts, shipping, customs..." />
+      <Input label="Vendor / Name" value={costForm.name} onChange={(e) => setCostForm({ ...costForm, name: e.target.value })} placeholder="e.g. Forecast 3D, FedEx shipping..." />
       <Input label="Amount" type="number" step="0.01" value={costForm.amount} onChange={(e) => setCostForm({ ...costForm, amount: e.target.value })} placeholder="0.00" />
-      <Input label="PO #" value={costForm.po_number} onChange={(e) => setCostForm({ ...costForm, po_number: e.target.value })} placeholder="PO number..." />
+      <Input label="PO #" value={costForm.po_number} onChange={(e) => setCostForm({ ...costForm, po_number: e.target.value })} placeholder="PO number (optional)..." />
       <div className="col-span-2">
         <Input label="Notes" value={costForm.notes} onChange={(e) => setCostForm({ ...costForm, notes: e.target.value })} placeholder="Additional notes..." />
       </div>
@@ -755,133 +748,75 @@ export default function CustomersPage() {
 
         {/* COSTS & PROFIT TAB */}
         {activeTab === "costs" && (
-          <div className="space-y-6">
-            {/* Profit Summary Cards */}
-            {(() => {
-              const profitEntries = Object.entries(profitByCustomer)
-                .filter(([id]) => !costFilterCustomer || id === costFilterCustomer)
-                .sort((a, b) => a[1].name.localeCompare(b[1].name));
-              const totalRevenue = profitEntries.reduce((s, [, d]) => s + d.revenue, 0);
-              const totalCost = profitEntries.reduce((s, [, d]) => s + d.costs, 0);
-              const totalProfit = totalRevenue - totalCost;
-
-              return (
-                <>
-                  {/* Overall summary */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-surface-card border border-border rounded-[14px] p-5">
-                      <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Total Revenue (Sold)</div>
-                      <div className="text-[22px] font-bold text-gray-100">{formatCurrency(totalRevenue)}</div>
-                    </div>
-                    <div className="bg-surface-card border border-border rounded-[14px] p-5">
-                      <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Total Costs</div>
-                      <div className="text-[22px] font-bold text-red-400">{formatCurrency(totalCost)}</div>
-                    </div>
-                    <div className="bg-surface-card border border-border rounded-[14px] p-5">
-                      <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Profit</div>
-                      <div className={`text-[22px] font-bold ${totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {formatCurrency(totalProfit)}
-                      </div>
-                      {totalRevenue > 0 && (
-                        <div className="text-[12px] text-gray-500 mt-0.5">
-                          {((totalProfit / totalRevenue) * 100).toFixed(1)}% margin
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Per-customer profit breakdown */}
-                  {profitEntries.length > 0 && (
-                    <div className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="border-b border-border">
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Customer</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Costs</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Profit</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Margin</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {profitEntries.map(([custId, d]) => {
-                            const profit = d.revenue - d.costs;
-                            const margin = d.revenue > 0 ? ((profit / d.revenue) * 100).toFixed(1) : "-";
-                            return (
-                              <tr key={custId} className="border-b border-border hover:bg-surface-hover transition-colors">
-                                <td className="px-4 py-3 text-[13px] text-gray-100 font-medium">{d.name}</td>
-                                <td className="px-4 py-3 text-[13px] text-gray-300 text-right">{formatCurrency(d.revenue)}</td>
-                                <td className="px-4 py-3 text-[13px] text-red-400 text-right">{formatCurrency(d.costs)}</td>
-                                <td className={`px-4 py-3 text-[13px] font-bold text-right ${profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                                  {formatCurrency(profit)}
-                                </td>
-                                <td className="px-4 py-3 text-[13px] text-gray-500 text-right">{margin}{margin !== "-" ? "%" : ""}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-
-            {/* Cost entries filter + total */}
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <select value={costFilterCustomer} onChange={(e) => setCostFilterCustomer(e.target.value)}
-                  className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand">
-                  <option value="">All Customers</option>
-                  {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <span className="text-[13px] text-gray-400">{filteredCosts.length} cost entr{filteredCosts.length !== 1 ? "ies" : "y"}</span>
-                <span className="text-[14px] font-bold text-brand">{formatCurrency(totalCosts)}</span>
-              </div>
+          <div className="space-y-4">
+            {/* Filter + total */}
+            <div className="flex gap-3 items-center">
+              <select value={costFilterCustomer} onChange={(e) => setCostFilterCustomer(e.target.value)}
+                className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand">
+                <option value="">All Customers</option>
+                {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <span className="text-[14px] font-bold text-brand">{formatCurrency(grandTotal)}</span>
             </div>
 
-            {/* Cost entries table */}
-            {filteredCosts.length > 0 ? (
-              <div className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Customer</th>
-                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Name / Description</th>
-                      <th className="px-4 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">PO #</th>
-                      <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
-                      <th className="px-4 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCosts.map((entry) => {
-                      const cust = customers.find((c) => c.id === entry.customer_id);
-                      return (
-                        <tr key={entry.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="px-4 py-3.5 text-[13px] text-gray-300 whitespace-nowrap">
-                            {entry.date ? new Date(entry.date).toLocaleDateString("en-US", { timeZone: "UTC" }) : "-"}
-                          </td>
-                          <td className="px-4 py-3.5 text-[13px] text-gray-100 font-medium">{cust?.name || "Unknown"}</td>
-                          <td className="px-4 py-3.5 text-[13px] text-gray-300">{entry.name}</td>
-                          <td className="px-4 py-3.5 text-[13px] text-gray-100 font-bold text-right">{formatCurrency(entry.amount || 0)}</td>
-                          <td className="px-4 py-3.5 text-[13px] text-gray-400 font-mono">{entry.po_number || "-"}</td>
-                          <td className="px-4 py-3.5 text-[13px] text-gray-500 max-w-[200px] truncate">{entry.notes || "-"}</td>
-                          <td className="px-4 py-3.5 text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button size="sm" variant="ghost" onClick={() => openEditCost(entry)}>Edit</Button>
-                              <Button size="sm" variant="ghost" onClick={() => handleDeleteCost(entry)} className="!text-red-400">Del</Button>
+            {/* Grouped by customer → order reference */}
+            {Object.entries(costsByCustomer).length > 0 ? (
+              Object.entries(costsByCustomer)
+                .sort((a, b) => a[1].name.localeCompare(b[1].name))
+                .map(([custId, group]) => (
+                  <div key={custId} className="space-y-3">
+                    {/* Customer header */}
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-brand/20 text-brand flex items-center justify-center text-[13px] font-bold">
+                          {group.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-[14px] font-semibold text-gray-100">{group.name}</span>
+                      </div>
+                      <span className="text-[14px] font-bold text-gray-100">{formatCurrency(group.total)}</span>
+                    </div>
+
+                    {/* Orders under this customer */}
+                    {Object.entries(group.orders)
+                      .sort((a, b) => a[0].localeCompare(b[0]))
+                      .map(([orderRef, entries]) => {
+                        const orderTotal = entries.reduce((s, e) => s + (e.amount || 0), 0);
+                        return (
+                          <div key={orderRef} className="ml-10">
+                            <div className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
+                              {/* Order header */}
+                              <div className="flex justify-between items-center px-5 py-3 border-b border-border">
+                                <span className="text-[13px] font-semibold text-gray-200">{orderRef}</span>
+                                <span className="text-[13px] font-bold text-brand">{formatCurrency(orderTotal)}</span>
+                              </div>
+                              {/* Expense rows */}
+                              {entries
+                                .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+                                .map((entry) => (
+                                  <div key={entry.id} className="flex items-center justify-between px-5 py-3 border-b border-border last:border-0 hover:bg-surface-hover transition-colors">
+                                    <div className="flex-1">
+                                      <div className="text-[13px] text-gray-100">{entry.name}</div>
+                                      <div className="text-[11px] text-gray-500 flex items-center gap-2">
+                                        {entry.date && <span>{new Date(entry.date).toLocaleDateString("en-US", { timeZone: "UTC" })}</span>}
+                                        {entry.po_number && <span className="text-gray-400 font-mono">{entry.po_number}</span>}
+                                        {entry.notes && <span className="italic">{entry.notes}</span>}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-[13px] font-bold text-gray-100">{formatCurrency(entry.amount || 0)}</span>
+                                      <Button size="sm" variant="ghost" onClick={() => openEditCost(entry)}>Edit</Button>
+                                      <Button size="sm" variant="ghost" onClick={() => handleDeleteCost(entry)} className="!text-red-400">Del</Button>
+                                    </div>
+                                  </div>
+                                ))}
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ))
             ) : (
-              <EmptyState icon="$" title="No cost entries" sub="Add your first cost entry to start tracking profitability" />
+              <EmptyState icon="$" title="No cost entries" sub="Add your first cost entry to start tracking expenses" />
             )}
           </div>
         )}
