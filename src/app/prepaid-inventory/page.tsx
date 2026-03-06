@@ -60,6 +60,7 @@ export default function PrepaidInventoryPage() {
 
   const [search, setSearch] = useState("");
   const [filterReceived, setFilterReceived] = useState("all");
+  const [sortBy, setSortBy] = useState<"name-asc" | "name-desc" | "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "po-asc" | "po-desc">("name-asc");
 
   const loadEntries = async () => {
     try {
@@ -167,6 +168,18 @@ export default function PrepaidInventoryPage() {
       (e.notes || "").toLowerCase().includes(search.toLowerCase());
     const matchesReceived = filterReceived === "all" || e.received === filterReceived;
     return matchesSearch && matchesReceived;
+  }).sort((a, b) => {
+    switch (sortBy) {
+      case "name-asc": return (a.name || "").localeCompare(b.name || "");
+      case "name-desc": return (b.name || "").localeCompare(a.name || "");
+      case "date-desc": return (b.date_placed || "").localeCompare(a.date_placed || "");
+      case "date-asc": return (a.date_placed || "").localeCompare(b.date_placed || "");
+      case "amount-desc": return (b.amount || 0) - (a.amount || 0);
+      case "amount-asc": return (a.amount || 0) - (b.amount || 0);
+      case "po-asc": return (a.po_number || "").localeCompare(b.po_number || "");
+      case "po-desc": return (b.po_number || "").localeCompare(a.po_number || "");
+      default: return (a.name || "").localeCompare(b.name || "");
+    }
   });
 
   const totalPrepaid = filtered.reduce((s, e) => s + (e.amount || 0), 0);
@@ -212,7 +225,7 @@ export default function PrepaidInventoryPage() {
           <Button onClick={() => { setForm(emptyForm); setAddModal(true); }}>+ Add Entry</Button>
         </div>
 
-        {/* Search + filter */}
+        {/* Search + filter + sort */}
         <div className="mb-5 flex gap-3 items-center">
           <input
             type="text"
@@ -229,6 +242,20 @@ export default function PrepaidInventoryPage() {
             {RECEIVED_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="bg-[#0B0F19] border border-border rounded-lg px-3 py-2 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+          >
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="amount-desc">Highest amount</option>
+            <option value="amount-asc">Lowest amount</option>
+            <option value="po-asc">PO# A-Z</option>
+            <option value="po-desc">PO# Z-A</option>
           </select>
           <span className="text-[12px] text-gray-500">{filtered.length} entr{filtered.length !== 1 ? "ies" : "y"}</span>
         </div>
