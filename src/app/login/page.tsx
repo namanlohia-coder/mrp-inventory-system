@@ -238,10 +238,10 @@ export default function LoginPage() {
                 <input
                   type="text"
                   inputMode="numeric"
-                  maxLength={6}
+                  maxLength={8}
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="000000"
+                  placeholder="00000000"
                   required
                   autoFocus
                   className="w-full bg-[#0B0F19] border border-[#1E293B] rounded-lg px-3.5 py-2.5 text-[18px] text-gray-200 outline-none focus:border-[#6366F1]/50 transition-colors tracking-[0.3em] text-center font-mono"
@@ -256,7 +256,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading || code.length !== 6}
+                disabled={loading || code.length !== 8}
                 className="w-full bg-[#6366F1] text-white rounded-lg py-2.5 text-[13px] font-semibold border-none cursor-pointer hover:bg-[#818CF8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? "Verifying..." : "Verify"}
