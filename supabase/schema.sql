@@ -143,6 +143,17 @@ CREATE POLICY "Allow all on stock_movements" ON stock_movements FOR ALL USING (t
 CREATE POLICY "Allow all on bom" ON bom FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on bom_components" ON bom_components FOR ALL USING (true) WITH CHECK (true);
 
+-- ─── LOGIN ATTEMPTS (rate limiting / lockout) ─
+CREATE TABLE IF NOT EXISTS login_attempts (
+  email TEXT PRIMARY KEY,
+  attempt_count INT NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE login_attempts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon access on login_attempts" ON login_attempts FOR ALL USING (true) WITH CHECK (true);
+
 -- ─── HELPER FUNCTION: Receive PO ────────────
 -- Call this to receive a PO: automatically updates stock + creates movements
 CREATE OR REPLACE FUNCTION receive_purchase_order(p_po_id UUID)
