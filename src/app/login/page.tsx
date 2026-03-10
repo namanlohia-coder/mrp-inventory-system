@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 const ALLOWED_EMAIL = "naman.lohia@skyfront.com";
 const MAX_ATTEMPTS = 3;
 const LOCKOUT_MINUTES = 10;
+const IS_DEV = process.env.NEXT_PUBLIC_SUPABASE_URL?.includes("localhost") ?? false;
 
 type Step = "credentials" | "verify";
 
@@ -66,6 +67,7 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [otpRateLimited, setOtpRateLimited] = useState(false);
 
   const handleCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,10 +119,19 @@ export default function LoginPage() {
       });
 
       if (otpError) {
-        setError("Could not send verification code. Please try again.");
+        const isRateLimit = otpError.message.toLowerCase().includes("rate") ||
+          otpError.status === 429;
+        setOtpRateLimited(isRateLimit);
+        setError(
+          isRateLimit
+            ? "Email rate limit reached. Please wait a few minutes before trying again."
+            : "Could not send verification code. Please try again."
+        );
+        setStep("verify");
         return;
       }
 
+      setOtpRateLimited(false);
       setStep("verify");
     } catch {
       setError("Login failed. Please try again.");
@@ -162,7 +173,17 @@ export default function LoginPage() {
         options: { shouldCreateUser: false },
       });
       if (otpError) {
-        setError("Could not resend code. Please try again.");
+        const isRateLimit = otpError.message.toLowerCase().includes("rate") ||
+          otpError.status === 429;
+        setOtpRateLimited(isRateLimit);
+        setError(
+          isRateLimit
+            ? "Email rate limit reached. Please wait a few minutes before trying again."
+            : "Could not resend code. Please try again."
+        );
+      } else {
+        setOtpRateLimited(false);
+        setError("");
       }
     } finally {
       setLoading(false);
@@ -265,7 +286,7 @@ export default function LoginPage() {
               <div className="mt-4 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => { setStep("credentials"); setCode(""); setError(""); }}
+                  onClick={() => { setStep("credentials"); setCode(""); setError(""); setOtpRateLimited(false); }}
                   className="text-[12px] text-gray-500 hover:text-gray-400 transition-colors bg-transparent border-none cursor-pointer p-0"
                 >
                   Back
@@ -279,6 +300,16 @@ export default function LoginPage() {
                   Resend code
                 </button>
               </div>
+
+              {IS_DEV && otpRateLimited && (
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = "/purchase-orders"; }}
+                  className="mt-4 w-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 rounded-lg py-2 text-[12px] font-medium cursor-pointer hover:bg-yellow-500/20 transition-colors"
+                >
+                  Skip verification (dev mode)
+                </button>
+              )}
             </form>
           )}
         </div>
