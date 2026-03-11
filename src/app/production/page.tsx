@@ -68,9 +68,12 @@ const emptyForm = {
   notes: "",
 };
 
+type ActiveTab = "schedule" | "parts" | "invoices";
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProductionPage() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>("schedule");
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -337,7 +340,41 @@ export default function ProductionPage() {
       <Header lowStockCount={lowStockCount} />
       <main className="flex-1 overflow-auto p-8">
 
-        {/* Top bar */}
+        {/* Tabs */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex gap-2">
+            {(["schedule", "parts", "invoices"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setActiveTab(t)}
+                className={`px-4 py-2 rounded-lg text-[13px] font-medium border transition-all cursor-pointer ${
+                  activeTab === t
+                    ? "bg-brand/20 border-brand text-brand"
+                    : "bg-surface-card border-border text-gray-400 hover:border-border-light"
+                }`}
+              >
+                {t === "schedule" ? "Production Schedule" : t === "parts" ? "Parts to Order" : "Invoices"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Parts to Order placeholder */}
+        {activeTab === "parts" && (
+          <div className="flex items-center justify-center py-24 text-gray-500 text-[15px]">
+            Parts to Order — coming soon
+          </div>
+        )}
+
+        {/* Invoices placeholder */}
+        {activeTab === "invoices" && (
+          <div className="flex items-center justify-center py-24 text-gray-500 text-[15px]">
+            Invoices — coming soon
+          </div>
+        )}
+
+        {/* Schedule tab content */}
+        {activeTab === "schedule" && <>
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-6">
             <div>
@@ -636,6 +673,8 @@ export default function ProductionPage() {
             </div>
           </div>
         </Modal>
+
+        </> /* end activeTab === "schedule" */}
 
       </main>
     </>

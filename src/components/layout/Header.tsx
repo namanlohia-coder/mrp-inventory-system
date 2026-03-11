@@ -15,6 +15,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/csv-import": "CSV Import",
   "/reports": "Reports",
   "/production": "Production",
+  "/production-timeline": "Production Timeline",
 };
 
 export function Header({ lowStockCount }: { lowStockCount: number }) {
