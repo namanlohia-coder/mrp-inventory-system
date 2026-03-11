@@ -14,6 +14,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/katana-sync": "Katana Sync",
   "/csv-import": "CSV Import",
   "/reports": "Reports",
+  "/production": "Production",
 };
 
 export function Header({ lowStockCount }: { lowStockCount: number }) {

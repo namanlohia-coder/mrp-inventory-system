@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/for-customs", label: "For Customs", icon: "F" },
   { href: "/inventory", label: "Inventory", icon: "I" },
   { href: "/prepaid-inventory", label: "Prepaid Inventory", icon: "$" },
+  { href: "/production", label: "Production", icon: "⚙" },
   { href: "/purchase-orders", label: "Purchase Orders", icon: "P" },
   { href: "/reports", label: "Reports", icon: "R" },
   { href: "/suppliers", label: "Suppliers", icon: "V" },

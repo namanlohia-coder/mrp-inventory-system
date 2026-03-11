@@ -143,6 +143,42 @@ CREATE POLICY "Allow all on stock_movements" ON stock_movements FOR ALL USING (t
 CREATE POLICY "Allow all on bom" ON bom FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on bom_components" ON bom_components FOR ALL USING (true) WITH CHECK (true);
 
+-- ─── PRODUCTION ORDERS ───────────────────────
+CREATE TABLE IF NOT EXISTS production_orders (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  start_date DATE,
+  training_date DATE,
+  delivery_date DATE,
+  status TEXT NOT NULL DEFAULT 'Planning' CHECK (status IN ('Planning','In Training','In Production','Ready','Delivered')),
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS production_order_materials (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  production_order_id UUID NOT NULL REFERENCES production_orders(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  quantity_needed DECIMAL(12,4) NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prod_orders_status ON production_orders(status);
+CREATE INDEX IF NOT EXISTS idx_prod_orders_customer ON production_orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_prod_materials_order ON production_order_materials(production_order_id);
+CREATE INDEX IF NOT EXISTS idx_prod_materials_product ON production_order_materials(product_id);
+
+CREATE TRIGGER set_production_orders_updated_at BEFORE UPDATE ON production_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+ALTER TABLE production_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE production_order_materials ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on production_orders" ON production_orders FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on production_order_materials" ON production_order_materials FOR ALL USING (true) WITH CHECK (true);
+
 -- ─── LOGIN ATTEMPTS (rate limiting / lockout) ─
 CREATE TABLE IF NOT EXISTS login_attempts (
   email TEXT PRIMARY KEY,
