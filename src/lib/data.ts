@@ -946,3 +946,94 @@ export async function updateSalesOrder(soId: string, updates: any) {
   if (error) throw error;
   return data;
 }
+
+// ─── PRODUCTION PARTS TO ORDER ──────────────────
+
+export async function getProductionParts() {
+  const { data, error } = await supabase
+    .from("production_parts_to_order")
+    .select("*, production_orders(id, order_name), products(id, name, sku, stock)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createProductionPart(part: {
+  part_name: string;
+  product_id?: string | null;
+  qty_needed: number;
+  production_order_id?: string | null;
+  po_number?: string;
+  notes?: string;
+}) {
+  const { data, error } = await supabase
+    .from("production_parts_to_order")
+    .insert({ ...part, ordered: false, received: false })
+    .select("*, production_orders(id, order_name), products(id, name, sku, stock)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateProductionPart(id: string, updates: any) {
+  const { data, error } = await supabase
+    .from("production_parts_to_order")
+    .update(updates)
+    .eq("id", id)
+    .select("*, production_orders(id, order_name), products(id, name, sku, stock)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteProductionPart(id: string) {
+  const { error } = await supabase.from("production_parts_to_order").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── PRODUCTION INVOICES ────────────────────────
+
+export async function getProductionInvoices() {
+  const { data, error } = await supabase
+    .from("production_invoices")
+    .select("*, production_orders(id, order_name)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createProductionInvoice(invoice: {
+  vendor_name: string;
+  invoice_number?: string;
+  amount?: number;
+  date?: string | null;
+  production_order_id?: string | null;
+  file_name?: string;
+  file_url?: string;
+  notes?: string;
+  line_items?: any[];
+}) {
+  const { data, error } = await supabase
+    .from("production_invoices")
+    .insert(invoice)
+    .select("*, production_orders(id, order_name)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateProductionInvoice(id: string, updates: any) {
+  const { data, error } = await supabase
+    .from("production_invoices")
+    .update(updates)
+    .eq("id", id)
+    .select("*, production_orders(id, order_name)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteProductionInvoice(id: string) {
+  const { error } = await supabase.from("production_invoices").delete().eq("id", id);
+  if (error) throw error;
+}
