@@ -45,8 +45,8 @@ interface ProductionPart {
   product_id: string | null;
   qty_needed: number;
   production_order_id: string | null;
-  ordered: boolean;
-  received: boolean;
+  is_ordered: boolean;
+  is_received: boolean;
   po_number: string;
   notes: string;
   created_at: string;
@@ -64,7 +64,7 @@ interface ProductionInvoice {
   file_name: string;
   file_url: string;
   notes: string;
-  line_items: any[];
+  parsed_data: any[];
   created_at: string;
   production_orders?: { id: string; order_name: string } | null;
 }
@@ -479,7 +479,7 @@ export default function ProductionPage() {
     } catch { toast.error("Failed to delete part"); }
   };
 
-  const handleTogglePart = async (part: ProductionPart, field: "ordered" | "received") => {
+  const handleTogglePart = async (part: ProductionPart, field: "is_ordered" | "is_received") => {
     const newVal = !part[field];
     // Optimistic update
     setParts((prev) => prev.map((p) => p.id === part.id ? { ...p, [field]: newVal } : p));
@@ -526,7 +526,7 @@ export default function ProductionPage() {
         production_order_id: "",
         notes: "",
       });
-      setParsedLineItems(parsed.line_items || []);
+      setParsedLineItems(parsed.line_items || parsed.parsed_data || []);
       setParseConfirmModal(true);
     } catch (err: any) {
       toast.error(err.message || "Failed to parse invoice");
@@ -548,7 +548,7 @@ export default function ProductionPage() {
         file_name: parsedFileName,
         file_url: parsedPdfBase64,
         notes: invoiceForm.notes,
-        line_items: parsedLineItems,
+        parsed_data: parsedLineItems,
       });
       toast.success("Invoice saved");
       setParseConfirmModal(false); setInvoiceForm(emptyInvoiceForm);
@@ -1025,9 +1025,9 @@ export default function ProductionPage() {
                 </thead>
                 <tbody>
                   {parts.map((part) => {
-                    const rowBg = part.received
+                    const rowBg = part.is_received
                       ? "bg-emerald-500/5"
-                      : part.ordered
+                      : part.is_ordered
                       ? "bg-amber-500/5"
                       : "";
                     return (
@@ -1043,16 +1043,16 @@ export default function ProductionPage() {
                         <td className="px-4 py-3.5 text-center">
                           <input
                             type="checkbox"
-                            checked={part.ordered}
-                            onChange={() => handleTogglePart(part, "ordered")}
+                            checked={part.is_ordered}
+                            onChange={() => handleTogglePart(part, "is_ordered")}
                             className="w-4 h-4 accent-emerald-500 cursor-pointer"
                           />
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <input
                             type="checkbox"
-                            checked={part.received}
-                            onChange={() => handleTogglePart(part, "received")}
+                            checked={part.is_received}
+                            onChange={() => handleTogglePart(part, "is_received")}
                             className="w-4 h-4 accent-emerald-500 cursor-pointer"
                           />
                         </td>

@@ -952,7 +952,7 @@ export async function updateSalesOrder(soId: string, updates: any) {
 export async function getProductionParts() {
   const { data, error } = await supabase
     .from("production_parts_to_order")
-    .select("*, production_orders(id, order_name), products(id, name, sku, stock)")
+    .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
@@ -968,8 +968,8 @@ export async function createProductionPart(part: {
 }) {
   const { data, error } = await supabase
     .from("production_parts_to_order")
-    .insert({ ...part, ordered: false, received: false })
-    .select("*, production_orders(id, order_name), products(id, name, sku, stock)")
+    .insert({ ...part, is_ordered: false, is_received: false })
+    .select("*")
     .single();
   if (error) throw error;
   return data;
@@ -980,7 +980,7 @@ export async function updateProductionPart(id: string, updates: any) {
     .from("production_parts_to_order")
     .update(updates)
     .eq("id", id)
-    .select("*, production_orders(id, order_name), products(id, name, sku, stock)")
+    .select("*")
     .single();
   if (error) throw error;
   return data;
@@ -996,7 +996,7 @@ export async function deleteProductionPart(id: string) {
 export async function getProductionInvoices() {
   const { data, error } = await supabase
     .from("production_invoices")
-    .select("*, production_orders(id, order_name)")
+    .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
@@ -1011,12 +1011,12 @@ export async function createProductionInvoice(invoice: {
   file_name?: string;
   file_url?: string;
   notes?: string;
-  line_items?: any[];
+  parsed_data?: any[];
 }) {
   const { data, error } = await supabase
     .from("production_invoices")
     .insert(invoice)
-    .select("*, production_orders(id, order_name)")
+    .select("*")
     .single();
   if (error) throw error;
   return data;
@@ -1027,7 +1027,7 @@ export async function updateProductionInvoice(id: string, updates: any) {
     .from("production_invoices")
     .update(updates)
     .eq("id", id)
-    .select("*, production_orders(id, order_name)")
+    .select("*")
     .single();
   if (error) throw error;
   return data;
@@ -1043,7 +1043,7 @@ export async function deleteProductionInvoice(id: string) {
 export async function getMilestones() {
   const { data, error } = await supabase
     .from("production_milestones")
-    .select("*, production_orders(id, order_name, delivery_date, training_date, start_date, customer_id, status, quantity, customers(id, name))")
+    .select("*")
     .order("due_date", { ascending: true });
   if (error) throw error;
   return data || [];
@@ -1061,7 +1061,7 @@ export async function createMilestone(milestone: {
   const { data, error } = await supabase
     .from("production_milestones")
     .insert(milestone)
-    .select("*, production_orders(id, order_name, delivery_date, customers(id, name))")
+    .select("*")
     .single();
   if (error) throw error;
   return data;
@@ -1072,7 +1072,7 @@ export async function updateMilestone(id: string, updates: any) {
     .from("production_milestones")
     .update(updates)
     .eq("id", id)
-    .select("*, production_orders(id, order_name, delivery_date, customers(id, name))")
+    .select("*")
     .single();
   if (error) throw error;
   return data;
@@ -1086,7 +1086,7 @@ export async function deleteMilestone(id: string) {
 export async function getProductionOrdersWithMilestones() {
   const { data, error } = await supabase
     .from("production_orders")
-    .select("*, customers(id, name), production_milestones(id, name, assigned_to, due_date, status, notes, sort_order, created_at)")
+    .select("*")
     .order("delivery_date", { ascending: true, nullsFirst: false });
   if (error) throw error;
   return data || [];
