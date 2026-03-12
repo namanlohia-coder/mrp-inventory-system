@@ -1037,3 +1037,57 @@ export async function deleteProductionInvoice(id: string) {
   const { error } = await supabase.from("production_invoices").delete().eq("id", id);
   if (error) throw error;
 }
+
+// ─── PRODUCTION MILESTONES ──────────────────────
+
+export async function getMilestones() {
+  const { data, error } = await supabase
+    .from("production_milestones")
+    .select("*, production_orders(id, order_name, delivery_date, training_date, start_date, customer_id, status, quantity, customers(id, name))")
+    .order("due_date", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createMilestone(milestone: {
+  production_order_id: string;
+  name: string;
+  assigned_to?: string;
+  due_date?: string | null;
+  status?: string;
+  notes?: string;
+  sort_order?: number;
+}) {
+  const { data, error } = await supabase
+    .from("production_milestones")
+    .insert(milestone)
+    .select("*, production_orders(id, order_name, delivery_date, customers(id, name))")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateMilestone(id: string, updates: any) {
+  const { data, error } = await supabase
+    .from("production_milestones")
+    .update(updates)
+    .eq("id", id)
+    .select("*, production_orders(id, order_name, delivery_date, customers(id, name))")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteMilestone(id: string) {
+  const { error } = await supabase.from("production_milestones").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function getProductionOrdersWithMilestones() {
+  const { data, error } = await supabase
+    .from("production_orders")
+    .select("*, customers(id, name), production_milestones(id, name, assigned_to, due_date, status, notes, sort_order, created_at)")
+    .order("delivery_date", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return data || [];
+}

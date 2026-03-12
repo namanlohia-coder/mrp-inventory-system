@@ -7,6 +7,7 @@ import {
   getProducts, getCustomers,
   getProductionParts, createProductionPart, updateProductionPart, deleteProductionPart,
   getProductionInvoices, createProductionInvoice, updateProductionInvoice, deleteProductionInvoice,
+  getMilestones, createMilestone, updateMilestone, deleteMilestone,
 } from "@/lib/data";
 import { Header } from "@/components/layout/Header";
 import { Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner, Textarea } from "@/components/ui";
@@ -69,7 +70,21 @@ interface ProductionInvoice {
 }
 
 type OrderStatus = "Planning" | "In Training" | "In Production" | "Ready" | "Delivered";
-type ActiveTab = "schedule" | "parts" | "invoices";
+type MilestoneStatus = "not_started" | "in_progress" | "complete" | "blocked";
+type ActiveTab = "schedule" | "parts" | "invoices" | "milestones";
+
+interface Milestone {
+  id: string;
+  production_order_id: string;
+  name: string;
+  assigned_to: string;
+  due_date: string | null;
+  status: MilestoneStatus;
+  notes: string;
+  sort_order: number;
+  created_at: string;
+  production_orders?: { id: string; order_name: string; delivery_date: string | null; customers?: { id: string; name: string } | null } | null;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -105,6 +120,32 @@ const emptyInvoiceForm = {
   vendor_name: "", invoice_number: "", amount: "",
   date: "", production_order_id: "", notes: "",
 };
+
+const emptyMilestoneForm = {
+  name: "", assigned_to: "", due_date: "",
+  status: "not_started" as MilestoneStatus, notes: "",
+};
+
+const MILESTONE_STATUS_OPTIONS = [
+  { value: "not_started", label: "Not Started" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "complete", label: "Complete" },
+  { value: "blocked", label: "Blocked" },
+];
+
+function milestoneStatusColor(s: MilestoneStatus): "default" | "blue" | "green" | "red" {
+  if (s === "not_started") return "default";
+  if (s === "in_progress") return "blue";
+  if (s === "complete") return "green";
+  return "red";
+}
+
+function daysFromNow(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateStr + "T00:00:00");
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
 
 // ─── Product ComboBox ─────────────────────────────────────────────────────────
 
@@ -216,6 +257,15 @@ export default function ProductionPage() {
   const [selectedPart, setSelectedPart] = useState<ProductionPart | null>(null);
   const [partForm, setPartForm] = useState(emptyPartForm);
 
+  // ── Milestone state ───────────────────────────────────────────────────────
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [addMilestoneOrderId, setAddMilestoneOrderId] = useState<string | null>(null);
+  const [addMilestoneModal, setAddMilestoneModal] = useState(false);
+  const [editMilestoneModal, setEditMilestoneModal] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
+  const [milestoneForm, setMilestoneForm] = useState(emptyMilestoneForm);
+
   // ── Invoice state ─────────────────────────────────────────────────────────
   const [invoices, setInvoices] = useState<ProductionInvoice[]>([]);
   const [addInvoiceModal, setAddInvoiceModal] = useState(false);
@@ -252,13 +302,19 @@ export default function ProductionPage() {
     } catch { toast.error("Failed to load invoices"); }
   };
 
+  const loadMilestones = async () => {
+    try {
+      setMilestones(await getMilestones());
+    } catch { toast.error("Failed to load milestones"); }
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
         const [prods, custs] = await Promise.all([getProducts(), getCustomers()]);
         setProducts(prods);
         setCustomers(custs);
-        await Promise.all([loadOrders(), loadParts(), loadInvoices()]);
+        await Promise.all([loadOrders(), loadParts(), loadInvoices(), loadMilestones()]);
       } finally {
         setLoading(false);
       }
@@ -534,6 +590,63 @@ export default function ProductionPage() {
     } catch { toast.error("Failed to delete invoice"); }
   };
 
+  // ── Milestone CRUD ────────────────────────────────────────────────────────
+
+  const openAddMilestone = (orderId: string) => {
+    setAddMilestoneOrderId(orderId);
+    setMilestoneForm(emptyMilestoneForm);
+    setAddMilestoneModal(true);
+  };
+
+  const handleAddMilestone = async () => {
+    if (!addMilestoneOrderId || !milestoneForm.name.trim()) return toast.error("Name is required");
+    try {
+      await createMilestone({
+        production_order_id: addMilestoneOrderId,
+        name: milestoneForm.name.trim(),
+        assigned_to: milestoneForm.assigned_to,
+        due_date: milestoneForm.due_date || null,
+        status: milestoneForm.status,
+        notes: milestoneForm.notes,
+      });
+      toast.success("Milestone added");
+      setAddMilestoneModal(false); setAddMilestoneOrderId(null); loadMilestones();
+    } catch (err: any) { toast.error(err.message || "Failed to add milestone"); }
+  };
+
+  const openEditMilestone = (m: Milestone) => {
+    setSelectedMilestone(m);
+    setMilestoneForm({ name: m.name, assigned_to: m.assigned_to || "", due_date: m.due_date || "", status: m.status, notes: m.notes || "" });
+    setEditMilestoneModal(true);
+  };
+
+  const handleEditMilestone = async () => {
+    if (!selectedMilestone || !milestoneForm.name.trim()) return toast.error("Name is required");
+    try {
+      await updateMilestone(selectedMilestone.id, {
+        name: milestoneForm.name.trim(), assigned_to: milestoneForm.assigned_to,
+        due_date: milestoneForm.due_date || null, status: milestoneForm.status, notes: milestoneForm.notes,
+      });
+      toast.success("Milestone updated"); setEditMilestoneModal(false); setSelectedMilestone(null); loadMilestones();
+    } catch (err: any) { toast.error(err.message || "Failed to update milestone"); }
+  };
+
+  const handleDeleteMilestone = async (m: Milestone) => {
+    if (!confirm(`Delete milestone "${m.name}"?`)) return;
+    try { await deleteMilestone(m.id); toast.success("Milestone deleted"); loadMilestones(); }
+    catch { toast.error("Failed to delete milestone"); }
+  };
+
+  const handleToggleMilestone = async (m: Milestone) => {
+    const newStatus: MilestoneStatus = m.status === "complete" ? "not_started" : "complete";
+    setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, status: newStatus } : x));
+    try { await updateMilestone(m.id, { status: newStatus }); }
+    catch { setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, status: m.status } : x)); toast.error("Failed to update"); }
+  };
+
+  const toggleOrderExpanded = (orderId: string) =>
+    setExpandedOrders((prev) => ({ ...prev, [orderId]: !prev[orderId] }));
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const fmtDate = (d: string | null) =>
@@ -630,7 +743,7 @@ export default function ProductionPage() {
         {/* Tabs */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex gap-2">
-            {(["schedule", "parts", "invoices"] as const).map((t) => (
+            {(["schedule", "parts", "invoices", "milestones"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setActiveTab(t)}
@@ -642,7 +755,8 @@ export default function ProductionPage() {
               >
                 {t === "schedule" ? `Production Schedule (${orders.length})`
                   : t === "parts" ? `Parts to Order (${totalParts})`
-                  : `Invoices (${invoices.length})`}
+                  : t === "invoices" ? `Invoices (${invoices.length})`
+                  : `Milestones (${milestones.length})`}
               </button>
             ))}
           </div>
@@ -1107,6 +1221,168 @@ export default function ProductionPage() {
           </Modal>
 
         </>}
+
+        {/* ════════════════════════════════════════════════════════════════
+            TAB 4 — MILESTONES
+        ════════════════════════════════════════════════════════════════ */}
+        {activeTab === "milestones" && (() => {
+          const today = new Date(); today.setHours(0,0,0,0);
+          const totalM = milestones.length;
+          const completeM = milestones.filter((m) => m.status === "complete").length;
+          const inProgressM = milestones.filter((m) => m.status === "in_progress").length;
+          const blockedM = milestones.filter((m) => m.status === "blocked").length;
+          const overdueM = milestones.filter((m) => m.status !== "complete" && m.due_date && new Date(m.due_date + "T00:00:00") < today).length;
+
+          // Group milestones by production_order_id
+          const grouped = new Map<string, Milestone[]>();
+          for (const m of milestones) {
+            const key = m.production_order_id;
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key)!.push(m);
+          }
+          // Build order info map from orders
+          const orderMap = new Map(orders.map((o) => [o.id, o]));
+
+          // Init expanded state for any new orders
+          for (const orderId of grouped.keys()) {
+            if (expandedOrders[orderId] === undefined) {
+              expandedOrders[orderId] = true;
+            }
+          }
+
+          return <>
+            {/* Summary bar */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-6">
+                <div><div className="text-[11px] text-gray-500 uppercase tracking-wide">Total</div><div className="text-[18px] font-bold text-gray-100">{totalM}</div></div>
+                <div><div className="text-[11px] text-gray-500 uppercase tracking-wide">Complete</div><div className="text-[18px] font-bold text-emerald-400">{completeM}</div></div>
+                <div><div className="text-[11px] text-gray-500 uppercase tracking-wide">In Progress</div><div className="text-[18px] font-bold text-blue-400">{inProgressM}</div></div>
+                <div><div className="text-[11px] text-gray-500 uppercase tracking-wide">Blocked</div><div className="text-[18px] font-bold text-red-400">{blockedM}</div></div>
+                <div><div className="text-[11px] text-gray-500 uppercase tracking-wide">Overdue</div><div className={`text-[18px] font-bold ${overdueM > 0 ? "text-amber-400" : "text-gray-500"}`}>{overdueM}</div></div>
+              </div>
+            </div>
+
+            {grouped.size === 0 ? (
+              <EmptyState icon="🏁" title="No milestones yet" sub="Add milestones to your production orders to start tracking progress" />
+            ) : (
+              <div className="flex flex-col gap-4">
+                {Array.from(grouped.entries()).map(([orderId, orderMilestones]) => {
+                  const order = orderMap.get(orderId);
+                  const days = order ? daysFromNow(order.delivery_date) : null;
+                  const isExpanded = expandedOrders[orderId] !== false;
+                  const orderComplete = orderMilestones.filter((m) => m.status === "complete").length;
+
+                  return (
+                    <div key={orderId} className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
+                      {/* Order header */}
+                      <div
+                        className="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-surface-hover transition-colors border-b border-border"
+                        onClick={() => toggleOrderExpanded(orderId)}
+                      >
+                        <div className="flex items-center gap-4">
+                          <span className="text-[11px] text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+                          <div>
+                            <span className="text-[14px] font-semibold text-gray-100">{order?.order_name || "Unknown Order"}</span>
+                            {order?.customers?.name && (
+                              <span className="ml-3 text-[12px] text-gray-500">{order.customers.name}</span>
+                            )}
+                          </div>
+                          {order?.delivery_date && (
+                            <span className="text-[12px] text-gray-500">
+                              Delivery: {fmtDate(order.delivery_date)}
+                              {days !== null && (
+                                <span className={`ml-2 font-semibold ${days < 0 ? "text-red-400" : days <= 7 ? "text-amber-400" : "text-gray-400"}`}>
+                                  {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Due today" : `${days}d remaining`}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[12px] text-gray-500">{orderComplete}/{orderMilestones.length} complete</span>
+                          <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); openAddMilestone(orderId); }}>+ Add</Button>
+                        </div>
+                      </div>
+
+                      {/* Milestone rows */}
+                      {isExpanded && (
+                        <div>
+                          {orderMilestones.map((m) => {
+                            const mDays = daysFromNow(m.due_date);
+                            const isOverdue = m.status !== "complete" && mDays !== null && mDays < 0;
+                            return (
+                              <div key={m.id} className={`flex items-center gap-4 px-5 py-3 border-b border-border last:border-0 hover:bg-surface-hover transition-colors ${isOverdue ? "bg-red-500/5" : ""}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={m.status === "complete"}
+                                  onChange={() => handleToggleMilestone(m)}
+                                  className="w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <span className={`text-[13px] font-medium ${m.status === "complete" ? "line-through text-gray-500" : "text-gray-100"}`}>{m.name}</span>
+                                  {m.assigned_to && <span className="ml-3 text-[12px] text-gray-500">↳ {m.assigned_to}</span>}
+                                </div>
+                                {m.due_date && (
+                                  <span className={`text-[12px] whitespace-nowrap ${isOverdue ? "text-red-400 font-semibold" : "text-gray-500"}`}>
+                                    {fmtDate(m.due_date)}
+                                    {mDays !== null && m.status !== "complete" && (
+                                      <span className="ml-1">
+                                        {mDays < 0 ? `(${Math.abs(mDays)}d overdue)` : mDays === 0 ? "(today)" : mDays <= 7 ? `(${mDays}d)` : ""}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                                <Badge color={milestoneStatusColor(m.status)}>
+                                  {m.status.replace("_", " ")}
+                                </Badge>
+                                <div className="flex gap-1 shrink-0">
+                                  <Button size="sm" variant="ghost" onClick={() => openEditMilestone(m)}>Edit</Button>
+                                  <Button size="sm" variant="ghost" onClick={() => handleDeleteMilestone(m)} className="!text-red-400">Del</Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add Milestone Modal */}
+            <Modal open={addMilestoneModal} onClose={() => { setAddMilestoneModal(false); setAddMilestoneOrderId(null); }} title="Add Milestone" className="w-[500px]">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><Input label="Milestone Name" value={milestoneForm.name} onChange={(e) => setMilestoneForm({ ...milestoneForm, name: e.target.value })} placeholder="e.g. Firmware complete" /></div>
+                <Input label="Assigned To" value={milestoneForm.assigned_to} onChange={(e) => setMilestoneForm({ ...milestoneForm, assigned_to: e.target.value })} placeholder="Person or team..." />
+                <Input label="Due Date" type="date" value={milestoneForm.due_date} onChange={(e) => setMilestoneForm({ ...milestoneForm, due_date: e.target.value })} />
+                <Select label="Status" value={milestoneForm.status} onChange={(e) => setMilestoneForm({ ...milestoneForm, status: e.target.value as MilestoneStatus })} options={MILESTONE_STATUS_OPTIONS} />
+                <div />
+                <div className="col-span-2"><Textarea label="Notes" value={milestoneForm.notes} onChange={(e) => setMilestoneForm({ ...milestoneForm, notes: e.target.value })} placeholder="Additional notes..." /></div>
+              </div>
+              <div className="flex justify-end gap-2.5 mt-6">
+                <Button variant="secondary" onClick={() => { setAddMilestoneModal(false); setAddMilestoneOrderId(null); }}>Cancel</Button>
+                <Button onClick={handleAddMilestone}>Add Milestone</Button>
+              </div>
+            </Modal>
+
+            {/* Edit Milestone Modal */}
+            <Modal open={editMilestoneModal} onClose={() => { setEditMilestoneModal(false); setSelectedMilestone(null); }} title="Edit Milestone" className="w-[500px]">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><Input label="Milestone Name" value={milestoneForm.name} onChange={(e) => setMilestoneForm({ ...milestoneForm, name: e.target.value })} placeholder="e.g. Firmware complete" /></div>
+                <Input label="Assigned To" value={milestoneForm.assigned_to} onChange={(e) => setMilestoneForm({ ...milestoneForm, assigned_to: e.target.value })} placeholder="Person or team..." />
+                <Input label="Due Date" type="date" value={milestoneForm.due_date} onChange={(e) => setMilestoneForm({ ...milestoneForm, due_date: e.target.value })} />
+                <Select label="Status" value={milestoneForm.status} onChange={(e) => setMilestoneForm({ ...milestoneForm, status: e.target.value as MilestoneStatus })} options={MILESTONE_STATUS_OPTIONS} />
+                <div />
+                <div className="col-span-2"><Textarea label="Notes" value={milestoneForm.notes} onChange={(e) => setMilestoneForm({ ...milestoneForm, notes: e.target.value })} placeholder="Additional notes..." /></div>
+              </div>
+              <div className="flex justify-end gap-2.5 mt-6">
+                <Button variant="secondary" onClick={() => { setEditMilestoneModal(false); setSelectedMilestone(null); }}>Cancel</Button>
+                <Button onClick={handleEditMilestone}>Save Changes</Button>
+              </div>
+            </Modal>
+          </>;
+        })()}
 
       </main>
     </>
