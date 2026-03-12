@@ -729,9 +729,9 @@ export default function ProductionPage() {
 
   // ─── Parts summary ────────────────────────────────────────────────────────
   const totalParts = parts.length;
-  const orderedParts = parts.filter((p) => p.ordered).length;
-  const receivedParts = parts.filter((p) => p.received).length;
-  const outstandingParts = parts.filter((p) => !p.received).length;
+  const orderedParts = parts.filter((p) => p.is_ordered).length;
+  const receivedParts = parts.filter((p) => p.is_received).length;
+  const outstandingParts = parts.filter((p) => !p.is_received).length;
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -826,12 +826,56 @@ export default function ProductionPage() {
                         <td className="px-4 py-3.5">
                           <div className="text-[13px] text-gray-100 font-medium">{order.order_name}</div>
                           {order.description && <div className="text-[11px] text-gray-500 mt-0.5 max-w-[200px] truncate">{order.description}</div>}
+                          {(() => {
+                            const orderMs = milestones.filter((m) => m.production_order_id === order.id);
+                            if (orderMs.length === 0) return null;
+                            const complete = orderMs.filter((m) => m.status === "complete").length;
+                            const pct = (complete / orderMs.length) * 100;
+                            const nextM = orderMs
+                              .filter((m) => m.status !== "complete" && m.due_date)
+                              .sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""))[0];
+                            return (
+                              <div className="mt-1.5 max-w-[220px]">
+                                <div className="flex items-center justify-between text-[10px] mb-0.5">
+                                  <span className="text-gray-500 truncate mr-2">
+                                    {nextM ? `Next: ${nextM.name}` : "All milestones complete"}
+                                  </span>
+                                  <span className="text-emerald-400 font-semibold shrink-0">{complete}/{orderMs.length}</span>
+                                </div>
+                                <div className="h-1 bg-[#0B0F19] rounded-full overflow-hidden border border-border">
+                                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-[13px] text-gray-300">{order.customers?.name || "—"}</td>
                         <td className="px-4 py-3.5 text-[13px] text-gray-100 font-mono text-center">{order.quantity}</td>
                         <td className="px-4 py-3.5 text-[13px] text-gray-400 whitespace-nowrap">{fmtDate(order.start_date)}</td>
-                        <td className="px-4 py-3.5 text-[13px] text-gray-400 whitespace-nowrap">{fmtDate(order.training_date)}</td>
-                        <td className="px-4 py-3.5 text-[13px] text-gray-400 whitespace-nowrap">{fmtDate(order.delivery_date)}</td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="text-[13px] text-gray-400">{fmtDate(order.training_date)}</div>
+                          {(() => {
+                            const d = daysFromNow(order.training_date);
+                            if (d === null) return null;
+                            return (
+                              <div className={`text-[11px] font-semibold mt-0.5 ${d < 0 ? "text-amber-400" : d === 0 ? "text-brand" : d <= 7 ? "text-amber-400" : "text-gray-600"}`}>
+                                {d < 0 ? `${Math.abs(d)}d ago` : d === 0 ? "Today" : `${d}d`}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="text-[13px] text-gray-400">{fmtDate(order.delivery_date)}</div>
+                          {(() => {
+                            const d = daysFromNow(order.delivery_date);
+                            if (d === null) return null;
+                            return (
+                              <div className={`text-[11px] font-semibold mt-0.5 ${d < 0 ? "text-red-400" : d <= 3 ? "text-amber-400" : d <= 14 ? "text-yellow-500" : "text-emerald-400"}`}>
+                                {d < 0 ? `${Math.abs(d)}d overdue` : d === 0 ? "Due today" : `${d}d`}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-4 py-3.5 text-center"><Badge color={statusColor(order.status)}>{order.status}</Badge></td>
                         <td className="px-4 py-3.5 text-center">
                           <button onClick={() => openMaterials(order)}

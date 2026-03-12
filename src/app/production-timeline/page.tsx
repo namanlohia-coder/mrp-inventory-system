@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/Header";
 import { Badge, LoadingSpinner } from "@/components/ui";
-import { getProducts, getProductionOrdersWithMilestones } from "@/lib/data";
+import { getProducts, getProductionOrdersWithMilestones, getMilestones, updateMilestone } from "@/lib/data";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Milestone {
   id: string;
+  production_order_id: string;
   name: string;
   assigned_to: string;
   due_date: string | null;
@@ -52,13 +53,18 @@ function fmtShort(s: string | null): string {
 }
 function startOfWeek(d: Date): Date {
   const r = new Date(d); r.setHours(0,0,0,0);
-  r.setDate(r.getDate() - r.getDay()); return r;
+  const day = r.getDay(); // 0=Sun
+  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
+  r.setDate(r.getDate() + diff); return r;
 }
 function endOfWeek(d: Date): Date {
   const r = startOfWeek(d); r.setDate(r.getDate() + 6); return r;
 }
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function mkDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
 function milestoneStatusColor(s: string): "default" | "blue" | "green" | "red" {
@@ -67,7 +73,6 @@ function milestoneStatusColor(s: string): "default" | "blue" | "green" | "red" {
   if (s === "complete") return "green";
   return "red";
 }
-
 function milestoneStatusDot(s: string): string {
   if (s === "complete") return "bg-emerald-400";
   if (s === "in_progress") return "bg-blue-400";
@@ -76,6 +81,179 @@ function milestoneStatusDot(s: string): string {
 }
 
 const ORDER_STATUS_COLS = ["Planning", "In Training", "In Production", "Ready", "Delivered"] as const;
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+// ─── This Week Panel ──────────────────────────────────────────────────────────
+
+function ThisWeekPanel({
+  milestones, orders, onToggle, collapsible = false,
+}: {
+  milestones: Milestone[];
+  orders: Order[];
+  onToggle: (m: Milestone) => void;
+  collapsible?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const todayDate = today0();
+  const weekStart = startOfWeek(todayDate);
+  const weekEnd = endOfWeek(todayDate);
+  const orderMap = new Map(orders.map((o) => [o.id, o.order_name]));
+
+  // Overdue: past due, not complete
+  const overdueMilestones = milestones
+    .filter((m) => {
+      const d = parseDate(m.due_date);
+      return d && d < todayDate && m.status !== "complete";
+    })
+    .sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
+
+  // Incomplete milestones due Mon–Sun this week (from today onward)
+  const thisWeekIncomplete = milestones
+    .filter((m) => {
+      if (m.status === "complete") return false;
+      const d = parseDate(m.due_date);
+      return d && d >= todayDate && d <= weekEnd;
+    })
+    .sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
+
+  // Complete milestones due anywhere in Mon–Sun (for counting)
+  const thisWeekComplete = milestones.filter((m) => {
+    if (m.status !== "complete") return false;
+    const d = parseDate(m.due_date);
+    return d && d >= weekStart && d <= weekEnd;
+  });
+
+  const totalThisWeek = thisWeekIncomplete.length + thisWeekComplete.length;
+  const remaining = thisWeekIncomplete.length;
+  const completed = thisWeekComplete.length;
+
+  // Group by day (Mon–Sun)
+  const daySlots: { key: string; date: Date; milestones: Milestone[] }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i);
+    daySlots.push({ key: mkDateKey(d), date: d, milestones: [] });
+  }
+  for (const m of thisWeekIncomplete) {
+    const key = m.due_date?.slice(0, 10);
+    const slot = daySlots.find((s) => s.key === key);
+    if (slot) slot.milestones.push(m);
+  }
+
+  const summaryText = totalThisWeek > 0
+    ? `${totalThisWeek} milestone${totalThisWeek !== 1 ? "s" : ""} this week · ${completed} complete · ${remaining} remaining`
+    : overdueMilestones.length > 0
+    ? `${overdueMilestones.length} overdue milestone${overdueMilestones.length !== 1 ? "s" : ""}`
+    : "Nothing due this week";
+
+  return (
+    <div className="mb-6 bg-surface-card border border-border rounded-[14px] overflow-hidden">
+      {/* Header */}
+      <div
+        className={`px-5 py-4 border-b border-border flex items-center justify-between ${collapsible ? "cursor-pointer hover:bg-surface-hover transition-colors select-none" : ""}`}
+        onClick={collapsible ? () => setCollapsed((c) => !c) : undefined}
+      >
+        <div>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[12px] font-bold text-amber-400 uppercase tracking-widest">This Week</span>
+            {collapsible && <span className="text-[10px] text-gray-600">{collapsed ? "▶" : "▼"}</span>}
+          </div>
+          <div className="text-[12px] text-gray-500">{summaryText}</div>
+        </div>
+        <div className="text-[11px] text-gray-600 whitespace-nowrap">
+          {weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          {" — "}
+          {weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* OVERDUE sub-section */}
+          {overdueMilestones.length > 0 && (
+            <div className="border-b border-border bg-red-500/5">
+              <div className="px-5 pt-3.5 pb-3">
+                <div className="text-[11px] font-bold text-red-400 uppercase tracking-widest mb-3">
+                  ⚠ Overdue ({overdueMilestones.length})
+                </div>
+                <div className="flex flex-col gap-2">
+                  {overdueMilestones.map((m) => {
+                    const days = daysFromNow(m.due_date);
+                    return (
+                      <div key={m.id} className="flex items-center gap-3 py-2 px-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                        <input
+                          type="checkbox"
+                          checked={m.status === "complete"}
+                          onChange={() => onToggle(m)}
+                          className="w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[13px] text-gray-100 font-medium">{m.name}</span>
+                          {m.assigned_to && <span className="ml-2 text-[12px] text-gray-500">↳ {m.assigned_to}</span>}
+                          <span className="ml-2 text-[12px] text-gray-500">— {orderMap.get(m.production_order_id) || "Unknown Order"}</span>
+                        </div>
+                        <span className="text-[11px] text-gray-500 whitespace-nowrap">{fmtShort(m.due_date)}</span>
+                        <span className="text-[12px] text-red-400 font-bold whitespace-nowrap">
+                          {days !== null ? `${Math.abs(days)}d overdue` : "—"}
+                        </span>
+                        <Badge color={milestoneStatusColor(m.status)}>{m.status.replace("_", " ")}</Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Nothing this week */}
+          {thisWeekIncomplete.length === 0 && overdueMilestones.length === 0 && (
+            <div className="px-5 py-6 text-[13px] text-gray-500 text-center">Nothing due this week</div>
+          )}
+          {thisWeekIncomplete.length === 0 && overdueMilestones.length > 0 && (
+            <div className="px-5 py-4 text-[13px] text-gray-600 text-center border-b border-border">No milestones due the rest of this week</div>
+          )}
+
+          {/* Day-grouped milestones */}
+          {daySlots.map((slot, i) => {
+            if (slot.milestones.length === 0) return null;
+            const isToday = isSameDay(slot.date, todayDate);
+            return (
+              <div key={slot.key} className={`border-b border-border last:border-0 ${isToday ? "bg-brand/5" : ""}`}>
+                <div className="px-5 py-2 flex items-center gap-2 bg-surface-hover/40">
+                  <span className={`text-[11px] font-bold uppercase tracking-wider ${isToday ? "text-brand" : "text-gray-500"}`}>
+                    {DAY_NAMES[i]}, {slot.date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+                  </span>
+                  {isToday && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand/20 text-brand font-semibold">TODAY</span>
+                  )}
+                </div>
+                <div>
+                  {slot.milestones.map((m) => (
+                    <div key={m.id} className="flex items-center gap-3 px-5 py-2.5 border-t border-border/40">
+                      <input
+                        type="checkbox"
+                        checked={m.status === "complete"}
+                        onChange={() => onToggle(m)}
+                        className="w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-[13px] font-medium ${m.status === "complete" ? "line-through text-gray-500" : "text-gray-100"}`}>
+                          {m.name}
+                        </span>
+                        {m.assigned_to && <span className="ml-2 text-[12px] text-gray-500">↳ {m.assigned_to}</span>}
+                        <span className="ml-2 text-[12px] text-gray-500">— {orderMap.get(m.production_order_id) || "Unknown Order"}</span>
+                      </div>
+                      <Badge color={milestoneStatusColor(m.status)}>{m.status.replace("_", " ")}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── Calendar View ────────────────────────────────────────────────────────────
 
@@ -115,9 +293,9 @@ function CalendarView({ orders }: { orders: Order[] }) {
   }
 
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const DAY_NAMES_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-  const selectedKey = selectedDay ? `${selectedDay.getFullYear()}-${String(selectedDay.getMonth()+1).padStart(2,"0")}-${String(selectedDay.getDate()).padStart(2,"0")}` : null;
+  const selectedKey = selectedDay ? mkDateKey(selectedDay) : null;
   const selectedEvents = selectedKey ? (eventMap.get(selectedKey) || []) : [];
 
   return (
@@ -137,7 +315,7 @@ function CalendarView({ orders }: { orders: Order[] }) {
 
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
-        {DAY_NAMES.map((d) => (
+        {DAY_NAMES_SHORT.map((d) => (
           <div key={d} className="text-center text-[11px] font-semibold text-gray-500 uppercase py-2">{d}</div>
         ))}
       </div>
@@ -148,7 +326,7 @@ function CalendarView({ orders }: { orders: Order[] }) {
           const isCurrentMonth = cell.getMonth() === month;
           const isToday = isSameDay(cell, todayDate);
           const isSelected = selectedDay ? isSameDay(cell, selectedDay) : false;
-          const key = `${cell.getFullYear()}-${String(cell.getMonth()+1).padStart(2,"0")}-${String(cell.getDate()).padStart(2,"0")}`;
+          const key = mkDateKey(cell);
           const events = eventMap.get(key) || [];
           const hasOverdue = events.some((e) => e.type === "milestone" && e.status !== "complete" &&
             parseDate(key) && parseDate(key)! < todayDate);
@@ -157,7 +335,11 @@ function CalendarView({ orders }: { orders: Order[] }) {
             <div key={i}
               onClick={() => setSelectedDay(isSelected ? null : new Date(cell))}
               className={`border-r border-b border-border min-h-[90px] p-1.5 cursor-pointer transition-colors ${
-                isSelected ? "bg-brand/10" : isToday ? "bg-[#1a1f35]" : isCurrentMonth ? "bg-surface-card hover:bg-surface-hover" : "bg-[#0d1117] hover:bg-[#111827]"
+                isSelected ? "bg-brand/10"
+                : hasOverdue && isCurrentMonth ? "bg-red-500/5 hover:bg-red-500/8"
+                : isToday ? "bg-[#1a1f35]"
+                : isCurrentMonth ? "bg-surface-card hover:bg-surface-hover"
+                : "bg-[#0d1117] hover:bg-[#111827]"
               }`}
             >
               <div className={`text-[12px] font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1 ${
@@ -224,7 +406,6 @@ function CalendarView({ orders }: { orders: Order[] }) {
 
 function CountdownView({ orders }: { orders: Order[] }) {
   const todayDate = today0();
-  const weekEnd = endOfWeek(todayDate);
 
   const activeOrders = orders.filter((o) => o.status !== "Delivered")
     .sort((a, b) => {
@@ -233,43 +414,8 @@ function CountdownView({ orders }: { orders: Order[] }) {
       return da - db;
     });
 
-  const thisWeekMilestones = orders.flatMap((o) =>
-    o.production_milestones
-      .filter((m) => {
-        if (m.status === "complete") return false;
-        const d = parseDate(m.due_date);
-        return d && d >= todayDate && d <= weekEnd;
-      })
-      .map((m) => ({ ...m, orderName: o.order_name }))
-  ).sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
-
   return (
     <div>
-      {/* This Week */}
-      {thisWeekMilestones.length > 0 && (
-        <div className="mb-6 bg-surface-card border border-border rounded-[14px] p-5">
-          <div className="text-[12px] font-semibold text-amber-400 uppercase tracking-widest mb-3">This Week</div>
-          <div className="flex flex-col gap-2">
-            {thisWeekMilestones.map((m) => {
-              const days = daysFromNow(m.due_date);
-              return (
-                <div key={m.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${milestoneStatusDot(m.status)}`} />
-                  <span className="text-[13px] text-gray-200 font-medium flex-1">{m.name}</span>
-                  <span className="text-[12px] text-gray-500">{m.orderName}</span>
-                  {m.assigned_to && <span className="text-[12px] text-gray-500">{m.assigned_to}</span>}
-                  <span className={`text-[12px] font-semibold ${days === 0 ? "text-red-400" : "text-amber-400"}`}>
-                    {days === 0 ? "Today" : `${days}d`}
-                  </span>
-                  <Badge color={milestoneStatusColor(m.status)}>{m.status.replace("_", " ")}</Badge>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Order cards */}
       {activeOrders.length === 0 ? (
         <div className="text-center py-16 text-gray-500 text-[14px]">No active production orders.</div>
       ) : (
@@ -280,7 +426,6 @@ function CountdownView({ orders }: { orders: Order[] }) {
             const milestones = [...order.production_milestones].sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
             const mComplete = milestones.filter((m) => m.status === "complete").length;
 
-            // Progress bar
             const start = parseDate(order.start_date);
             const end = parseDate(order.delivery_date);
             let progressPct = 0;
@@ -309,7 +454,7 @@ function CountdownView({ orders }: { orders: Order[] }) {
                     </div>
                   </div>
 
-                  {/* Progress bar */}
+                  {/* Timeline progress bar */}
                   {order.start_date && order.delivery_date && (
                     <div className="mt-4">
                       <div className="flex justify-between text-[11px] text-gray-500 mb-1">
@@ -318,7 +463,6 @@ function CountdownView({ orders }: { orders: Order[] }) {
                       </div>
                       <div className="relative h-2 bg-[#0B0F19] rounded-full overflow-hidden border border-border">
                         <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: isOverdue ? "#ef4444" : "#6366f1" }} />
-                        {/* Today marker */}
                         <div className="absolute top-0 bottom-0 w-0.5 bg-white/60" style={{ left: `${progressPct}%` }} />
                       </div>
                     </div>
@@ -333,9 +477,17 @@ function CountdownView({ orders }: { orders: Order[] }) {
                   )}
 
                   {/* Milestone progress */}
-                  <div className="mt-2 text-[12px] text-gray-500">
-                    Milestones: <span className="text-emerald-400 font-semibold">{mComplete}</span>/{milestones.length} complete
-                  </div>
+                  {milestones.length > 0 && (
+                    <div className="mt-3">
+                      <div className="flex justify-between text-[11px] text-gray-500 mb-1">
+                        <span>Milestones</span>
+                        <span className="text-emerald-400 font-semibold">{mComplete}/{milestones.length} complete</span>
+                      </div>
+                      <div className="h-1.5 bg-[#0B0F19] rounded-full overflow-hidden border border-border">
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${milestones.length > 0 ? (mComplete / milestones.length) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Milestone list */}
@@ -376,8 +528,6 @@ function CountdownView({ orders }: { orders: Order[] }) {
 // ─── Board View ───────────────────────────────────────────────────────────────
 
 function BoardView({ orders }: { orders: Order[] }) {
-  const todayDate = today0();
-
   return (
     <div className="grid grid-cols-5 gap-4 min-h-[400px]">
       {ORDER_STATUS_COLS.map((col) => {
@@ -439,42 +589,71 @@ function BoardView({ orders }: { orders: Order[] }) {
 export default function ProductionTimelinePage() {
   const [view, setView] = useState<View>("calendar");
   const [orders, setOrders] = useState<Order[]>([]);
+  const [allMilestones, setAllMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
   const [lowStockCount, setLowStockCount] = useState(0);
 
   useEffect(() => {
     const init = async () => {
       try {
-        const [prods, ordersData] = await Promise.all([
+        const [prods, rawOrders, rawMilestones] = await Promise.all([
           getProducts(),
           getProductionOrdersWithMilestones(),
+          getMilestones(),
         ]);
         setLowStockCount(prods.filter((p: any) => p.stock <= p.reorder_point).length);
-        setOrders(ordersData as Order[]);
+        // Client-side join milestones onto orders
+        const withMs = rawOrders.map((o: any) => ({
+          ...o,
+          production_milestones: rawMilestones.filter((m: any) => m.production_order_id === o.id),
+        }));
+        setOrders(withMs as Order[]);
+        setAllMilestones(rawMilestones as Milestone[]);
       } catch { /* silently handle */ }
       finally { setLoading(false); }
     };
     init();
   }, []);
 
-  // Stats
+  const handleToggleMilestone = async (m: Milestone) => {
+    const newStatus = m.status === "complete" ? "not_started" : "complete";
+    // Optimistic update
+    setAllMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, status: newStatus } : x));
+    setOrders((prev) => prev.map((o) => ({
+      ...o,
+      production_milestones: o.production_milestones.map((x) => x.id === m.id ? { ...x, status: newStatus } : x),
+    })));
+    try {
+      await updateMilestone(m.id, { status: newStatus });
+    } catch {
+      // Revert
+      setAllMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, status: m.status } : x));
+      setOrders((prev) => prev.map((o) => ({
+        ...o,
+        production_milestones: o.production_milestones.map((x) => x.id === m.id ? { ...x, status: m.status } : x),
+      })));
+    }
+  };
+
+  // Stats — computed from flat allMilestones
   const todayDate = today0();
   const weekEnd = endOfWeek(todayDate);
   const activeOrders = orders.filter((o) => o.status !== "Delivered");
-  const allMilestones = orders.flatMap((o) => o.production_milestones);
 
   const dueThisWeek = allMilestones.filter((m) => {
     const d = parseDate(m.due_date);
     return d && d >= todayDate && d <= weekEnd && m.status !== "complete";
   }).length;
 
-  const overdue = allMilestones.filter((m) => {
+  const overdueMilestones = allMilestones.filter((m) => {
     const d = parseDate(m.due_date);
     return d && d < todayDate && m.status !== "complete";
-  }).length;
+  });
 
   const thisMonthStart = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1);
-  const completedThisMonth = allMilestones.filter((m) => m.status === "complete" && parseDate(m.due_date) && parseDate(m.due_date)! >= thisMonthStart).length;
+  const completedThisMonth = allMilestones.filter((m) =>
+    m.status === "complete" && parseDate(m.due_date) && parseDate(m.due_date)! >= thisMonthStart
+  ).length;
 
   if (loading) return <LoadingSpinner />;
 
@@ -484,7 +663,7 @@ export default function ProductionTimelinePage() {
       <main className="flex-1 overflow-auto p-8">
 
         {/* Stats + view toggle */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-6">
             <div>
               <div className="text-[11px] text-gray-500 uppercase tracking-wide">Active Orders</div>
@@ -496,7 +675,7 @@ export default function ProductionTimelinePage() {
             </div>
             <div>
               <div className="text-[11px] text-gray-500 uppercase tracking-wide">Overdue</div>
-              <div className={`text-[18px] font-bold ${overdue > 0 ? "text-red-400" : "text-emerald-400"}`}>{overdue}</div>
+              <div className={`text-[18px] font-bold ${overdueMilestones.length > 0 ? "text-red-400" : "text-emerald-400"}`}>{overdueMilestones.length}</div>
             </div>
             <div>
               <div className="text-[11px] text-gray-500 uppercase tracking-wide">Completed This Month</div>
@@ -516,6 +695,36 @@ export default function ProductionTimelinePage() {
             ))}
           </div>
         </div>
+
+        {/* Overdue alert banner */}
+        {overdueMilestones.length > 0 && (
+          <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3 flex items-start gap-3">
+            <span className="text-red-400 text-[15px] shrink-0 mt-0.5">⚠</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-semibold text-red-400 mb-1">
+                {overdueMilestones.length} overdue milestone{overdueMilestones.length !== 1 ? "s" : ""}
+              </div>
+              <div className="text-[12px] text-red-300/70 leading-relaxed">
+                {overdueMilestones.slice(0, 4).map((m) => {
+                  const order = orders.find((o) => o.id === m.production_order_id);
+                  const days = daysFromNow(m.due_date);
+                  return `${m.name} (${order?.order_name || "Unknown"}, ${Math.abs(days || 0)}d overdue)`;
+                }).join(" · ")}
+                {overdueMilestones.length > 4 && ` · +${overdueMilestones.length - 4} more`}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* This Week panel — shown above calendar and countdown */}
+        {view !== "board" && (
+          <ThisWeekPanel
+            milestones={allMilestones}
+            orders={orders}
+            onToggle={handleToggleMilestone}
+            collapsible={view === "calendar"}
+          />
+        )}
 
         {view === "calendar" && <CalendarView orders={orders} />}
         {view === "countdown" && <CountdownView orders={orders} />}

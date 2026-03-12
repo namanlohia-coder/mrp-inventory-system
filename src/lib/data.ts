@@ -1086,7 +1086,7 @@ export async function deleteMilestone(id: string) {
 export async function getProductionOrdersWithMilestones() {
   const { data, error } = await supabase
     .from("production_orders")
-    .select("*")
+    .select("*, customers(id, name)")
     .order("delivery_date", { ascending: true, nullsFirst: false });
   if (error) throw error;
   return data || [];
