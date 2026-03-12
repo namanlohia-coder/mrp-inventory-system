@@ -14,7 +14,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/katana-sync": "Katana Sync",
   "/csv-import": "CSV Import",
   "/reports": "Reports",
-  "/production": "Production",
+  "/production-orders": "Production Orders",
+  "/parts-procurement": "Parts & Procurement",
   "/production-timeline": "Production Timeline",
 };
 

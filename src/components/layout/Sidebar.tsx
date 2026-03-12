@@ -24,7 +24,8 @@ const SECTIONS = [
     key: "production",
     label: "Production",
     items: [
-      { href: "/production", label: "Production", icon: "⚙" },
+      { href: "/production-orders", label: "Production Orders", icon: "O" },
+      { href: "/parts-procurement", label: "Parts & Procurement", icon: "P" },
       { href: "/production-timeline", label: "Production Timeline", icon: "▦" },
     ],
   },

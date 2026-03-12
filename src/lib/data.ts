@@ -965,6 +965,7 @@ export async function createProductionPart(part: {
   production_order_id?: string | null;
   po_number?: string;
   notes?: string;
+  source_invoice_id?: string | null;
 }) {
   const { data, error } = await supabase
     .from("production_parts_to_order")
