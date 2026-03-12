@@ -947,12 +947,51 @@ export async function updateSalesOrder(soId: string, updates: any) {
   return data;
 }
 
+// ─── SKU CATALOG ────────────────────────────────────────────────────────────
+
+export interface SKUItem {
+  id: string;
+  sku: string;
+  part_name: string;
+  price: number | null;
+  supplier: string;
+  order_link: string;
+  created_at: string;
+}
+
+export async function getSKUCatalog(): Promise<SKUItem[]> {
+  const { data, error } = await supabase
+    .from("sku_catalog")
+    .select("*")
+    .order("part_name");
+  if (error) throw error;
+  return (data || []) as SKUItem[];
+}
+
+export async function replaceSKUCatalog(
+  items: Omit<SKUItem, "id" | "created_at">[]
+): Promise<void> {
+  // Delete all existing rows
+  await supabase
+    .from("sku_catalog")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  // Insert in batches of 500
+  const batchSize = 500;
+  for (let i = 0; i < items.length; i += batchSize) {
+    const { error } = await supabase
+      .from("sku_catalog")
+      .insert(items.slice(i, i + batchSize) as any);
+    if (error) throw error;
+  }
+}
+
 // ─── PRODUCTION PARTS TO ORDER ──────────────────
 
 export async function getProductionParts() {
   const { data, error } = await supabase
     .from("production_parts_to_order")
-    .select("*")
+    .select("*, sku_catalog:sku_catalog_id(sku, part_name, supplier, order_link)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
@@ -966,6 +1005,8 @@ export async function createProductionPart(part: {
   po_number?: string;
   notes?: string;
   source_invoice_id?: string | null;
+  sku_catalog_id?: string | null;
+  order_link?: string;
 }) {
   const { data, error } = await supabase
     .from("production_parts_to_order")
