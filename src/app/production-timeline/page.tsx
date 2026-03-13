@@ -277,8 +277,9 @@ function CalendarView({ orders }: { orders: Order[] }) {
   }
 
   // Build event map: dateStr → events[]
-  const eventMap = new Map<string, { type: "milestone" | "training" | "delivery"; label: string; status?: string; orderId: string }[]>();
-  const addEvent = (dateStr: string | null, ev: typeof eventMap extends Map<string, infer V> ? V[number] : never) => {
+  type CalEvent = { type: "milestone" | "training" | "delivery"; label: string; status?: string; orderId: string };
+  const eventMap = new Map<string, CalEvent[]>();
+  const addEvent = (dateStr: string | null, ev: CalEvent) => {
     if (!dateStr) return;
     const key = dateStr.slice(0, 10);
     if (!eventMap.has(key)) eventMap.set(key, []);
@@ -655,7 +656,16 @@ export default function ProductionTimelinePage() {
     m.status === "complete" && parseDate(m.due_date) && parseDate(m.due_date)! >= thisMonthStart
   ).length;
 
-  if (loading) return <LoadingSpinner />;
+  if (loading) {
+    return (
+      <>
+        <Header lowStockCount={0} />
+        <main className="flex-1 flex items-center justify-center">
+          <LoadingSpinner />
+        </main>
+      </>
+    );
+  }
 
   return (
     <>

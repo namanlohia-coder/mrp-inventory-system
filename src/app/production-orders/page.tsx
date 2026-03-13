@@ -94,7 +94,8 @@ function statusColor(s: OrderStatus): "default" | "blue" | "orange" | "green" | 
   if (s === "In Training") return "blue";
   if (s === "In Production") return "orange";
   if (s === "Ready") return "green";
-  return "red";
+  if (s === "Delivered") return "green";
+  return "default";
 }
 
 function milestoneStatusColor(s: MilestoneStatus): "default" | "blue" | "green" | "red" {
@@ -348,7 +349,7 @@ export default function ProductionOrdersPage() {
         .select("id, production_order_id, product_id, quantity_needed, products(id, name, sku, stock)")
         .single();
       if (error) throw error;
-      setMaterials((prev) => [...prev, data as MaterialLine]);
+      setMaterials((prev) => [...prev, data as unknown as MaterialLine]);
       setNewMatProductId("");
       setNewMatQty("1");
       loadOrders();

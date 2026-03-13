@@ -162,12 +162,14 @@ export function Modal({
   onClose,
   title,
   children,
+  footer,
   className,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  footer?: ReactNode;
   className?: string;
 }) {
   if (!open) return null;
@@ -193,6 +195,9 @@ export function Modal({
           </button>
         </div>
         {children}
+        {footer && (
+          <div className="mt-6 pt-5 border-t border-border">{footer}</div>
+        )}
       </div>
     </div>
   );
