@@ -374,19 +374,25 @@ export default function PartsProcurementPage() {
       const setCostIdx = idx(columnMapping.set_cost);
       const originIdx = idx(columnMapping.origin);
 
+      // Fill-down category: only the first row of each group has a value
+      let lastCategory = "";
       const items = pendingRows
         .filter((row) => nameIdx >= 0 && String(row[nameIdx] ?? "").trim())
-        .map((row) => ({
-          sku: skuIdx >= 0 ? String(row[skuIdx] ?? "").trim() : "",
-          part_name: String(row[nameIdx] ?? "").trim(),
-          price: priceIdx >= 0 ? parseFloat(String(row[priceIdx])) || null : null,
-          supplier: supplierIdx >= 0 ? String(row[supplierIdx] ?? "").trim() : "",
-          order_link: linkIdx >= 0 ? String(row[linkIdx] ?? "").trim() : "",
-          category: categoryIdx >= 0 ? String(row[categoryIdx] ?? "").trim() : "",
-          qty_per_unit: qtyPerUnitIdx >= 0 ? parseFloat(String(row[qtyPerUnitIdx])) || null : null,
-          set_cost: setCostIdx >= 0 ? parseFloat(String(row[setCostIdx])) || null : null,
-          origin: originIdx >= 0 ? String(row[originIdx] ?? "").trim() : "",
-        }));
+        .map((row) => {
+          const rawCategory = categoryIdx >= 0 ? String(row[categoryIdx] ?? "").trim() : "";
+          if (rawCategory) lastCategory = rawCategory;
+          return {
+            sku: skuIdx >= 0 ? String(row[skuIdx] ?? "").trim() : "",
+            part_name: String(row[nameIdx] ?? "").trim(),
+            price: priceIdx >= 0 ? parseFloat(String(row[priceIdx])) || null : null,
+            supplier: supplierIdx >= 0 ? String(row[supplierIdx] ?? "").trim() : "",
+            order_link: linkIdx >= 0 ? String(row[linkIdx] ?? "").trim() : "",
+            category: lastCategory,
+            qty_per_unit: qtyPerUnitIdx >= 0 ? parseFloat(String(row[qtyPerUnitIdx])) || null : null,
+            set_cost: setCostIdx >= 0 ? parseFloat(String(row[setCostIdx])) || null : null,
+            origin: originIdx >= 0 ? String(row[originIdx] ?? "").trim() : "",
+          };
+        });
 
       await replaceSKUCatalog(items);
       toast.success(`SKU catalog updated — ${items.length} items loaded`);
