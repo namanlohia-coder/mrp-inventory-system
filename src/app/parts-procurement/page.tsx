@@ -78,6 +78,10 @@ interface ColumnMapping {
   price: string;
   supplier: string;
   order_link: string;
+  category: string;
+  qty_per_unit: string;
+  set_cost: string;
+  origin: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -157,7 +161,12 @@ export default function PartsProcurementPage() {
     price: "",
     supplier: "",
     order_link: "",
+    category: "",
+    qty_per_unit: "",
+    set_cost: "",
+    origin: "",
   });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
   // ── Invoice upload / parse flow ──────────────────────────────────────────────
   const [parseLoading, setParseLoading] = useState(false);
@@ -247,8 +256,19 @@ export default function PartsProcurementPage() {
       !catalogSearch ||
       item.part_name.toLowerCase().includes(catalogSearch.toLowerCase()) ||
       item.sku.toLowerCase().includes(catalogSearch.toLowerCase()) ||
-      item.supplier.toLowerCase().includes(catalogSearch.toLowerCase())
+      item.supplier.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+      item.category.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+      item.origin.toLowerCase().includes(catalogSearch.toLowerCase())
   );
+
+  // Group catalog by category (for ungrouped/no-search display)
+  const catalogByCategory = skuCatalog.reduce<Record<string, SKUItem[]>>((acc, item) => {
+    const cat = item.category || "Uncategorized";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+  const catalogCategories = Object.keys(catalogByCategory).sort();
 
   const filteredParts = parts.filter((p) => {
     const matchSearch =
@@ -318,10 +338,14 @@ export default function PartsProcurementPage() {
       setPendingRows(rows.filter((r) => r.some((c) => String(c).trim())));
       setColumnMapping({
         sku: autoMap(["sku", "code", "part number", "part#", "item #", "item#"]),
-        part_name: autoMap(["part name", "name", "description", "item", "product"]),
-        price: autoMap(["price", "cost", "unit cost", "unit price", "rate"]),
+        part_name: autoMap(["part name", "component", "name", "description", "item", "product"]),
+        price: autoMap(["unit cost", "unit price", "price", "cost", "rate"]),
         supplier: autoMap(["supplier", "vendor", "manufacturer", "brand"]),
         order_link: autoMap(["order link", "link", "url", "buy link", "purchase link"]),
+        category: autoMap(["subassembly", "category", "group", "section", "assembly"]),
+        qty_per_unit: autoMap(["per drone", "qty per unit", "qty per", "per unit", "quantity per"]),
+        set_cost: autoMap(["set cost", "total cost", "extended", "line total"]),
+        origin: autoMap(["origin", "made in", "country", "source"]),
       });
       setColumnMappingModal(true);
     } catch (err: any) {
@@ -345,6 +369,10 @@ export default function PartsProcurementPage() {
       const priceIdx = idx(columnMapping.price);
       const supplierIdx = idx(columnMapping.supplier);
       const linkIdx = idx(columnMapping.order_link);
+      const categoryIdx = idx(columnMapping.category);
+      const qtyPerUnitIdx = idx(columnMapping.qty_per_unit);
+      const setCostIdx = idx(columnMapping.set_cost);
+      const originIdx = idx(columnMapping.origin);
 
       const items = pendingRows
         .filter((row) => nameIdx >= 0 && String(row[nameIdx] ?? "").trim())
@@ -354,6 +382,10 @@ export default function PartsProcurementPage() {
           price: priceIdx >= 0 ? parseFloat(String(row[priceIdx])) || null : null,
           supplier: supplierIdx >= 0 ? String(row[supplierIdx] ?? "").trim() : "",
           order_link: linkIdx >= 0 ? String(row[linkIdx] ?? "").trim() : "",
+          category: categoryIdx >= 0 ? String(row[categoryIdx] ?? "").trim() : "",
+          qty_per_unit: qtyPerUnitIdx >= 0 ? parseFloat(String(row[qtyPerUnitIdx])) || null : null,
+          set_cost: setCostIdx >= 0 ? parseFloat(String(row[setCostIdx])) || null : null,
+          origin: originIdx >= 0 ? String(row[originIdx] ?? "").trim() : "",
         }));
 
       await replaceSKUCatalog(items);
@@ -688,7 +720,7 @@ export default function PartsProcurementPage() {
                 <EmptyState
                   icon="📋"
                   title="No SKU catalog yet"
-                  sub="Upload a CSV or Excel file with your parts catalog. You'll map which columns correspond to SKU, Part Name, Price, Supplier, and Order Link."
+                  sub="Upload a CSV or Excel file with your parts catalog. You'll map which columns to SKU, Part Name, Price, Supplier, Order Link, Category, Qty/Unit, Set Cost, and Origin."
                 />
               ) : (
                 <>
@@ -711,69 +743,101 @@ export default function PartsProcurementPage() {
                       </span>
                     )}
                   </div>
-                  <div className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b border-border">
-                          {["SKU", "Part Name", "Price", "Supplier", "Order Link"].map(
-                            (col) => (
-                              <th
-                                key={col}
-                                className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide"
-                              >
-                                {col}
-                              </th>
-                            )
+
+                  {/* Shared table header columns */}
+                  {(() => {
+                    const thCls = "px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap";
+                    const cols = ["Component", "Part #", "Supplier", "URL", "Per Drone", "Unit Cost", "Set Cost", "Origin"];
+
+                    const renderRow = (item: SKUItem) => (
+                      <tr key={item.id} className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors">
+                        <td className="px-4 py-2.5 text-[13px] text-gray-200 font-medium">{item.part_name}</td>
+                        <td className="px-4 py-2.5 text-[12px] font-mono text-gray-400">{item.sku || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5 text-[13px] text-gray-400">{item.supplier || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5">
+                          {item.order_link ? (
+                            <a href={item.order_link} target="_blank" rel="noopener noreferrer" className="text-[12px] text-brand hover:underline whitespace-nowrap">
+                              Order →
+                            </a>
+                          ) : (
+                            <span className="text-gray-600 text-[12px]">—</span>
                           )}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredCatalog.slice(0, 100).map((item) => (
-                          <tr
-                            key={item.id}
-                            className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors"
-                          >
-                            <td className="px-4 py-2.5 text-[12px] font-mono text-gray-400">
-                              {item.sku || <span className="text-gray-600">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-[13px] text-gray-200 font-medium">
-                              {item.part_name}
-                            </td>
-                            <td className="px-4 py-2.5 text-[13px] text-gray-300">
-                              {item.price != null ? (
-                                formatCurrency(item.price)
-                              ) : (
-                                <span className="text-gray-600">—</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
+                          {item.qty_per_unit != null ? item.qty_per_unit : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
+                          {item.price != null ? formatCurrency(item.price) : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
+                          {item.set_cost != null ? formatCurrency(item.set_cost) : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-[12px] text-gray-500">{item.origin || <span className="text-gray-600">—</span>}</td>
+                      </tr>
+                    );
+
+                    if (catalogSearch) {
+                      // Flat filtered list
+                      return (
+                        <div className="bg-surface-card border border-border rounded-[14px] overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="border-b border-border">
+                                {cols.map((col) => <th key={col} className={thCls}>{col}</th>)}
+                              </tr>
+                            </thead>
+                            <tbody>{filteredCatalog.map(renderRow)}</tbody>
+                          </table>
+                        </div>
+                      );
+                    }
+
+                    // Grouped by category
+                    return (
+                      <div className="space-y-3">
+                        {catalogCategories.map((cat) => {
+                          const isCollapsed = collapsedCategories.has(cat);
+                          const items = catalogByCategory[cat];
+                          return (
+                            <div key={cat} className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
+                              {/* Category header */}
+                              <button
+                                onClick={() =>
+                                  setCollapsedCategories((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(cat)) next.delete(cat);
+                                    else next.add(cat);
+                                    return next;
+                                  })
+                                }
+                                className="w-full flex items-center justify-between px-4 py-3 bg-surface-hover/30 hover:bg-surface-hover/60 transition-colors cursor-pointer border-none text-left"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-gray-500 text-[11px]">{isCollapsed ? "▶" : "▼"}</span>
+                                  <span className="text-[13px] font-semibold text-gray-200">{cat}</span>
+                                  <span className="text-[11px] text-gray-500 bg-surface-card border border-border px-2 py-0.5 rounded-full">
+                                    {items.length}
+                                  </span>
+                                </div>
+                              </button>
+                              {!isCollapsed && (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full border-collapse">
+                                    <thead>
+                                      <tr className="border-b border-border border-t border-border">
+                                        {cols.map((col) => <th key={col} className={thCls}>{col}</th>)}
+                                      </tr>
+                                    </thead>
+                                    <tbody>{items.map(renderRow)}</tbody>
+                                  </table>
+                                </div>
                               )}
-                            </td>
-                            <td className="px-4 py-2.5 text-[13px] text-gray-400">
-                              {item.supplier || <span className="text-gray-600">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              {item.order_link ? (
-                                <a
-                                  href={item.order_link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[12px] text-brand hover:underline"
-                                >
-                                  Order →
-                                </a>
-                              ) : (
-                                <span className="text-gray-600 text-[12px]">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {filteredCatalog.length > 100 && (
-                      <div className="px-4 py-3 text-[12px] text-gray-500 border-t border-border text-center">
-                        Showing 100 of {filteredCatalog.length} — refine your search to see
-                        more
+                            </div>
+                          );
+                        })}
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </>
               )}
             </>
@@ -1211,11 +1275,15 @@ export default function PartsProcurementPage() {
         <div className="space-y-3 mb-6">
           {(
             [
-              { key: "part_name" as const, label: "Part Name", required: true },
+              { key: "part_name" as const, label: "Component / Part Name", required: true },
               { key: "sku" as const, label: "SKU / Part #", required: false },
-              { key: "price" as const, label: "Price", required: false },
+              { key: "category" as const, label: "Category / Subassembly", required: false },
               { key: "supplier" as const, label: "Supplier", required: false },
               { key: "order_link" as const, label: "Order Link / URL", required: false },
+              { key: "qty_per_unit" as const, label: "Qty Per Drone / Unit", required: false },
+              { key: "price" as const, label: "Unit Cost / Price", required: false },
+              { key: "set_cost" as const, label: "Set Cost", required: false },
+              { key: "origin" as const, label: "Origin / Country", required: false },
             ] as { key: keyof ColumnMapping; label: string; required: boolean }[]
           ).map(({ key, label, required }) => (
             <div key={key} className="flex items-center gap-4">

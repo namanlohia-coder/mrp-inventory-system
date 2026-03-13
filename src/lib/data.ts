@@ -956,6 +956,10 @@ export interface SKUItem {
   price: number | null;
   supplier: string;
   order_link: string;
+  category: string;
+  qty_per_unit: number | null;
+  set_cost: number | null;
+  origin: string;
   created_at: string;
 }
 
