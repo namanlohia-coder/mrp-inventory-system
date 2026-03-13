@@ -261,14 +261,15 @@ export default function PartsProcurementPage() {
       item.origin.toLowerCase().includes(catalogSearch.toLowerCase())
   );
 
-  // Group catalog by category (for ungrouped/no-search display)
+  // Group catalog by category — preserve the order categories first appear (= spreadsheet order)
   const catalogByCategory = skuCatalog.reduce<Record<string, SKUItem[]>>((acc, item) => {
     const cat = item.category || "Uncategorized";
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
     return acc;
   }, {});
-  const catalogCategories = Object.keys(catalogByCategory).sort();
+  // Use insertion-order of keys (JS objects preserve insertion order since ES2015)
+  const catalogCategories = Object.keys(catalogByCategory);
 
   const filteredParts = parts.filter((p) => {
     const matchSearch =
@@ -383,14 +384,17 @@ export default function PartsProcurementPage() {
         name_col: r[nameIdx],
       })));
 
-      // Fill-down category: only the first row of each group has a value
+      // Fill-down category: only the first row of each group has a value.
+      // sort_order preserves spreadsheet row sequence so display matches import order.
       let lastCategory = "";
+      let sortIdx = 0;
       const items = pendingRows
         .filter((row) => nameIdx >= 0 && String(row[nameIdx] ?? "").trim())
         .map((row) => {
           const rawCategory = categoryIdx >= 0 ? String(row[categoryIdx] ?? "").trim() : "";
           if (rawCategory) lastCategory = rawCategory;
           return {
+            sort_order: sortIdx++,
             sku: skuIdx >= 0 ? String(row[skuIdx] ?? "").trim() : "",
             part_name: String(row[nameIdx] ?? "").trim(),
             price: priceIdx >= 0 ? parseFloat(String(row[priceIdx])) || null : null,

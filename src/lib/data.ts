@@ -951,6 +951,7 @@ export async function updateSalesOrder(soId: string, updates: any) {
 
 export interface SKUItem {
   id: string;
+  sort_order: number | null;
   sku: string;
   part_name: string;
   price: number | null;
@@ -967,7 +968,8 @@ export async function getSKUCatalog(): Promise<SKUItem[]> {
   const { data, error } = await supabase
     .from("sku_catalog")
     .select("*")
-    .order("part_name");
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true });
   if (error) throw error;
   return (data || []) as SKUItem[];
 }
