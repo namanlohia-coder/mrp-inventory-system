@@ -770,15 +770,25 @@ export default function PartsProcurementPage() {
 
                   {/* Shared table header columns */}
                   {(() => {
-                    const thCls = "px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap";
-                    const cols = ["Component", "Part #", "Supplier", "URL", "Per Drone", "Unit Cost", "Set Cost", "Origin"];
+                    const base = "px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap";
+                    // [col label, header align, cell align]
+                    const cols: [string, string, string][] = [
+                      ["Component",  "text-left",   "text-left"],
+                      ["Part #",     "text-left",   "text-left"],
+                      ["Supplier",   "text-left",   "text-left"],
+                      ["URL",        "text-center", "text-center"],
+                      ["Per Drone",  "text-center", "text-center"],
+                      ["Unit Cost",  "text-right",  "text-right"],
+                      ["Set Cost",   "text-right",  "text-right"],
+                      ["Origin",     "text-center", "text-center"],
+                    ];
 
                     const renderRow = (item: SKUItem) => (
                       <tr key={item.id} className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors">
-                        <td className="px-4 py-2.5 text-[13px] text-gray-200 font-medium">{item.part_name}</td>
-                        <td className="px-4 py-2.5 text-[12px] font-mono text-gray-400">{item.sku || <span className="text-gray-600">—</span>}</td>
-                        <td className="px-4 py-2.5 text-[13px] text-gray-400">{item.supplier || <span className="text-gray-600">—</span>}</td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-2.5 text-[13px] text-gray-200 font-medium text-left">{item.part_name}</td>
+                        <td className="px-4 py-2.5 text-[11px] font-mono text-gray-400 text-left">{item.sku || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5 text-[13px] text-gray-400 text-left">{item.supplier || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5 text-center">
                           {item.order_link ? (
                             <a href={item.order_link} target="_blank" rel="noopener noreferrer" className="text-[12px] text-brand hover:underline whitespace-nowrap">
                               Order →
@@ -787,7 +797,7 @@ export default function PartsProcurementPage() {
                             <span className="text-gray-600 text-[12px]">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
+                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-center">
                           {item.qty_per_unit != null ? item.qty_per_unit : <span className="text-gray-600">—</span>}
                         </td>
                         <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
@@ -796,7 +806,7 @@ export default function PartsProcurementPage() {
                         <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
                           {item.set_cost != null ? formatCurrency(item.set_cost) : <span className="text-gray-600">—</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-[12px] text-gray-500">{item.origin || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5 text-[12px] text-gray-500 text-center">{item.origin || <span className="text-gray-600">—</span>}</td>
                       </tr>
                     );
 
@@ -807,7 +817,7 @@ export default function PartsProcurementPage() {
                           <table className="w-full border-collapse">
                             <thead>
                               <tr className="border-b border-border">
-                                {cols.map((col) => <th key={col} className={thCls}>{col}</th>)}
+                                {cols.map(([label, align]) => <th key={label} className={`${base} ${align}`}>{label}</th>)}
                               </tr>
                             </thead>
                             <tbody>{filteredCatalog.map(renderRow)}</tbody>
@@ -849,7 +859,7 @@ export default function PartsProcurementPage() {
                                   <table className="w-full border-collapse">
                                     <thead>
                                       <tr className="border-b border-border border-t border-border">
-                                        {cols.map((col) => <th key={col} className={thCls}>{col}</th>)}
+                                        {cols.map(([label, align]) => <th key={label} className={`${base} ${align}`}>{label}</th>)}
                                       </tr>
                                     </thead>
                                     <tbody>{items.map(renderRow)}</tbody>
