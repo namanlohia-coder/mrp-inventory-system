@@ -342,7 +342,8 @@ export default function PartsProcurementPage() {
         price: autoMap(["unit cost", "unit price", "price", "cost", "rate"]),
         supplier: autoMap(["supplier", "vendor", "manufacturer", "brand"]),
         order_link: autoMap(["order link", "link", "url", "buy link", "purchase link"]),
-        category: autoMap(["subassembly", "category", "group", "section", "assembly"]),
+        // Try "subassembly" alone first — "group" is too generic and grabs unrelated columns
+        category: autoMap(["subassembly"]) || autoMap(["category", "section", "assembly", "group"]),
         qty_per_unit: autoMap(["per drone", "qty per unit", "qty per", "per unit", "quantity per"]),
         set_cost: autoMap(["set cost", "total cost", "extended", "line total"]),
         origin: autoMap(["origin", "made in", "country", "source"]),
@@ -374,6 +375,14 @@ export default function PartsProcurementPage() {
       const setCostIdx = idx(columnMapping.set_cost);
       const originIdx = idx(columnMapping.origin);
 
+      console.log("[SKU Import] headers:", pendingHeaders);
+      console.log("[SKU Import] categoryIdx:", categoryIdx, "→ column:", pendingHeaders[categoryIdx] ?? "NOT FOUND");
+      console.log("[SKU Import] nameIdx:", nameIdx, "→ column:", pendingHeaders[nameIdx] ?? "NOT FOUND");
+      console.log("[SKU Import] raw first 20 rows:", pendingRows.slice(0, 20).map((r) => ({
+        category_col: r[categoryIdx],
+        name_col: r[nameIdx],
+      })));
+
       // Fill-down category: only the first row of each group has a value
       let lastCategory = "";
       const items = pendingRows
@@ -393,6 +402,11 @@ export default function PartsProcurementPage() {
             origin: originIdx >= 0 ? String(row[originIdx] ?? "").trim() : "",
           };
         });
+
+      console.log("[SKU Import] first 20 items after fill-down:", items.slice(0, 20).map((i) => ({
+        part_name: i.part_name,
+        category: i.category,
+      })));
 
       await replaceSKUCatalog(items);
       toast.success(`SKU catalog updated — ${items.length} items loaded`);
