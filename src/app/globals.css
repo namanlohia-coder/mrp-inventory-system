@@ -43,6 +43,12 @@ tr {
   transition: background-color 0.1s ease;
 }
 
+/* Date picker calendar icon — make visible on dark backgrounds */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
 /* Toast overrides */
 .toast-custom {
   font-family: "DM Sans", system-ui, sans-serif !important;

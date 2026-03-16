@@ -768,26 +768,26 @@ export default function PartsProcurementPage() {
                     )}
                   </div>
 
-                  {/* Shared table header columns */}
+                  {/* SKU catalog table — header and row helpers with explicit per-column alignment */}
                   {(() => {
-                    const base = "px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap";
-                    // [col label, header align, cell align]
-                    const cols: [string, string, string][] = [
-                      ["Component",  "text-left",   "text-left"],
-                      ["Part #",     "text-left",   "text-left"],
-                      ["Supplier",   "text-left",   "text-left"],
-                      ["URL",        "text-center", "text-center"],
-                      ["Per Drone",  "text-center", "text-center"],
-                      ["Unit Cost",  "text-right",  "text-right"],
-                      ["Set Cost",   "text-right",  "text-right"],
-                      ["Origin",     "text-center", "text-center"],
-                    ];
+                    const CatalogHead = () => (
+                      <tr className="border-b border-border">
+                        <th className="px-4 py-3 text-left   text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Component</th>
+                        <th className="px-4 py-3 text-left   text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Part #</th>
+                        <th className="px-4 py-3 text-left   text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Supplier</th>
+                        <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">URL</th>
+                        <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Per Drone</th>
+                        <th className="px-4 py-3 text-right  text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Unit Cost</th>
+                        <th className="px-4 py-3 text-right  text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Set Cost</th>
+                        <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Origin</th>
+                      </tr>
+                    );
 
-                    const renderRow = (item: SKUItem) => (
-                      <tr key={item.id} className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors">
-                        <td className="px-4 py-2.5 text-[13px] text-gray-200 font-medium text-left">{item.part_name}</td>
-                        <td className="px-4 py-2.5 text-[11px] font-mono text-gray-400 text-left">{item.sku || <span className="text-gray-600">—</span>}</td>
-                        <td className="px-4 py-2.5 text-[13px] text-gray-400 text-left">{item.supplier || <span className="text-gray-600">—</span>}</td>
+                    const CatalogRow = ({ item }: { item: SKUItem }) => (
+                      <tr className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors">
+                        <td className="px-4 py-2.5 text-left   text-[13px] text-gray-200 font-medium">{item.part_name}</td>
+                        <td className="px-4 py-2.5 text-left   text-[11px] font-mono text-gray-400">{item.sku || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5 text-left   text-[13px] text-gray-400">{item.supplier || <span className="text-gray-600">—</span>}</td>
                         <td className="px-4 py-2.5 text-center">
                           {item.order_link ? (
                             <a href={item.order_link} target="_blank" rel="noopener noreferrer" className="text-[12px] text-brand hover:underline whitespace-nowrap">
@@ -797,44 +797,37 @@ export default function PartsProcurementPage() {
                             <span className="text-gray-600 text-[12px]">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-center">
+                        <td className="px-4 py-2.5 text-center text-[13px] text-gray-300">
                           {item.qty_per_unit != null ? item.qty_per_unit : <span className="text-gray-600">—</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
+                        <td className="px-4 py-2.5 text-right  text-[13px] text-gray-300">
                           {item.price != null ? formatCurrency(item.price) : <span className="text-gray-600">—</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-[13px] text-gray-300 text-right">
+                        <td className="px-4 py-2.5 text-right  text-[13px] text-gray-300">
                           {item.set_cost != null ? formatCurrency(item.set_cost) : <span className="text-gray-600">—</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-[12px] text-gray-500 text-center">{item.origin || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-2.5 text-center text-[12px] text-gray-500">{item.origin || <span className="text-gray-600">—</span>}</td>
                       </tr>
                     );
 
                     if (catalogSearch) {
-                      // Flat filtered list
                       return (
                         <div className="bg-surface-card border border-border rounded-[14px] overflow-x-auto">
                           <table className="w-full border-collapse">
-                            <thead>
-                              <tr className="border-b border-border">
-                                {cols.map(([label, align]) => <th key={label} className={`${base} ${align}`}>{label}</th>)}
-                              </tr>
-                            </thead>
-                            <tbody>{filteredCatalog.map(renderRow)}</tbody>
+                            <thead><CatalogHead /></thead>
+                            <tbody>{filteredCatalog.map((item) => <CatalogRow key={item.id} item={item} />)}</tbody>
                           </table>
                         </div>
                       );
                     }
 
-                    // Grouped by category
                     return (
                       <div className="space-y-3">
                         {catalogCategories.map((cat) => {
                           const isCollapsed = collapsedCategories.has(cat);
-                          const items = catalogByCategory[cat];
+                          const catItems = catalogByCategory[cat];
                           return (
                             <div key={cat} className="bg-surface-card border border-border rounded-[14px] overflow-hidden">
-                              {/* Category header */}
                               <button
                                 onClick={() =>
                                   setCollapsedCategories((prev) => {
@@ -850,19 +843,15 @@ export default function PartsProcurementPage() {
                                   <span className="text-gray-500 text-[11px]">{isCollapsed ? "▶" : "▼"}</span>
                                   <span className="text-[13px] font-semibold text-gray-200">{cat}</span>
                                   <span className="text-[11px] text-gray-500 bg-surface-card border border-border px-2 py-0.5 rounded-full">
-                                    {items.length}
+                                    {catItems.length}
                                   </span>
                                 </div>
                               </button>
                               {!isCollapsed && (
                                 <div className="overflow-x-auto">
                                   <table className="w-full border-collapse">
-                                    <thead>
-                                      <tr className="border-b border-border border-t border-border">
-                                        {cols.map(([label, align]) => <th key={label} className={`${base} ${align}`}>{label}</th>)}
-                                      </tr>
-                                    </thead>
-                                    <tbody>{items.map(renderRow)}</tbody>
+                                    <thead><CatalogHead /></thead>
+                                    <tbody>{catItems.map((item) => <CatalogRow key={item.id} item={item} />)}</tbody>
                                   </table>
                                 </div>
                               )}
