@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   getPurchaseOrdersList, getPurchaseOrder, searchPurchaseOrders, getPurchaseOrdersTotal, getProducts, getSuppliers, getNextPONumber,
   createPurchaseOrder, updatePurchaseOrder, duplicatePurchaseOrder, updatePOStatus, receivePurchaseOrder, deletePurchaseOrder, partialReceivePO,
-  createSupplier, createProduct,
+  createSupplier, createProduct, getCustomers, getProductionInvoices,
 } from "@/lib/data";
 import { generatePOPdf } from "@/lib/generate-po-pdf";
 import { Header } from "@/components/layout/Header";
@@ -121,6 +121,8 @@ export default function PurchaseOrdersPage() {
   const [page, setPage] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [productionInvoices, setProductionInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [createModal, setCreateModal] = useState(false);
@@ -136,12 +138,12 @@ export default function PurchaseOrdersPage() {
   const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "supplier-asc" | "supplier-desc" | "po-desc" | "po-asc">("supplier-asc");
 
   const [nextNum, setNextNum] = useState("");
-  const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
+  const [form, setForm] = useState({ supplierId: "", expectedDate: "", notes: "", customerId: "", invoiceId: "" });
   const [lineItems, setLineItems] = useState<{ productId: string; productName: string; qty: string; unitCost: string }[]>([]);
 
   const [editModal, setEditModal] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
-  const [editForm, setEditForm] = useState({ supplierId: "", expectedDate: "", notes: "" });
+  const [editForm, setEditForm] = useState({ supplierId: "", expectedDate: "", notes: "", customerId: "", invoiceId: "" });
   const [editLineItems, setEditLineItems] = useState<{ productId: string; productName: string; qty: string; unitCost: string }[]>([]);
 
   const [receiveModal, setReceiveModal] = useState(false);
@@ -155,17 +157,21 @@ export default function PurchaseOrdersPage() {
   const load = async (status?: string) => {
     const activeStatus = status || filterStatus;
     try {
-      const [poResult, prodData, supData, totalAmt] = await Promise.all([
+      const [poResult, prodData, supData, totalAmt, custData, invData] = await Promise.all([
         getPurchaseOrdersList(PAGE_SIZE, 0, activeStatus),
         getProducts(),
         getSuppliers(),
         getPurchaseOrdersTotal(activeStatus),
+        getCustomers(),
+        getProductionInvoices(),
       ]);
       setPOs(poResult.data);
       setTotalCount(poResult.count);
       setDbTotal(totalAmt);
       setProducts(prodData);
       setSuppliers(supData);
+      setCustomers(custData);
+      setProductionInvoices(invData);
       setPage(0);
     } catch (e) {
       toast.error("Failed to load data");
@@ -297,7 +303,7 @@ export default function PurchaseOrdersPage() {
   const openCreate = async () => {
     const num = await getNextPONumber();
     setNextNum(num);
-    setForm({ supplierId: suppliers[0]?.id || "", expectedDate: "", notes: "" });
+    setForm({ supplierId: suppliers[0]?.id || "", expectedDate: "", notes: "", customerId: "", invoiceId: "" });
     setLineItems([{ productId: "", productName: "", qty: "1", unitCost: "0" }]);
     setCreateModal(true);
   };
@@ -311,7 +317,7 @@ export default function PurchaseOrdersPage() {
     if (lineItems.length === 0) return toast.error("Add at least one line item");
     try {
       await createPurchaseOrder(
-        { po_number: nextNum, supplier_id: form.supplierId, status, expected_date: form.expectedDate || null, notes: form.notes },
+        { po_number: nextNum, supplier_id: form.supplierId, status, expected_date: form.expectedDate || null, notes: form.notes, customer_id: form.customerId || null, invoice_id: form.invoiceId || null } as any,
         lineItems.map((i) => ({ product_id: i.productId, quantity: parseInt(i.qty) || 0, unit_cost: parseFloat(i.unitCost) || 0 })),
       );
       toast.success(status === "draft" ? "Draft saved" : "Order submitted");
@@ -362,7 +368,7 @@ export default function PurchaseOrdersPage() {
     try {
       const fullPO = await getPurchaseOrder(po.id);
       setEditingPO(fullPO);
-      setEditForm({ supplierId: fullPO.supplier_id || "", expectedDate: fullPO.expected_date || "", notes: fullPO.notes || "" });
+      setEditForm({ supplierId: fullPO.supplier_id || "", expectedDate: fullPO.expected_date || "", notes: fullPO.notes || "", customerId: (fullPO as any).customer_id || "", invoiceId: (fullPO as any).invoice_id || "" });
       setEditLineItems((fullPO.line_items || []).map((item) => ({
         productId: item.product_id || item.product?.id || "",
         productName: item.product?.name || "",
@@ -386,7 +392,7 @@ export default function PurchaseOrdersPage() {
     try {
       const items = editLineItems.map((i) => ({ product_id: i.productId, quantity: parseInt(i.qty) || 0, unit_cost: parseFloat(i.unitCost) || 0 }));
       const total = items.reduce((s, i) => s + i.quantity * i.unit_cost, 0);
-      await updatePurchaseOrder(editingPO.id, { supplier_id: editForm.supplierId, expected_date: editForm.expectedDate || null, notes: editForm.notes, total_amount: total }, items);
+      await updatePurchaseOrder(editingPO.id, { supplier_id: editForm.supplierId, expected_date: editForm.expectedDate || null, notes: editForm.notes, total_amount: total, customer_id: editForm.customerId || null, invoice_id: editForm.invoiceId || null } as any, items);
       toast.success("Purchase order updated"); setEditModal(false); setEditingPO(null); load();
     } catch (err: any) { toast.error(err.message || "Failed to update PO"); }
   };
@@ -465,6 +471,8 @@ export default function PurchaseOrdersPage() {
         supplierId: supplierId || form.supplierId,
         expectedDate: parsed.expected_date || form.expectedDate,
         notes: notes || form.notes,
+        customerId: form.customerId,
+        invoiceId: form.invoiceId,
       });
 
       // Match or create products for each line item
@@ -644,7 +652,10 @@ export default function PurchaseOrdersPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <div className="font-bold text-sm text-gray-100 font-mono">{po.po_number}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{po.supplier?.name || "Unknown"} | Created {fmtDate(po.created_at)}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {po.supplier?.name || "Unknown"} | Created {fmtDate(po.created_at)}
+                    {(po as any).customer_id && (() => { const c = customers.find((x) => x.id === (po as any).customer_id); return c ? <span className="ml-2 text-brand/80">· {c.name}</span> : null; })()}
+                  </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
@@ -703,7 +714,7 @@ export default function PurchaseOrdersPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <ComboBox
               label="Supplier"
               value={form.supplierId}
@@ -714,6 +725,34 @@ export default function PurchaseOrdersPage() {
               createLabel="Create supplier"
             />
             <Input label="Expected Delivery" type="date" value={form.expectedDate} onChange={(e) => setForm({ ...form, expectedDate: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] text-gray-500 uppercase tracking-wide">Customer</label>
+              <select
+                value={form.customerId}
+                onChange={(e) => setForm({ ...form, customerId: e.target.value })}
+                className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-200 focus:outline-none focus:border-brand [color-scheme:dark]"
+              >
+                <option value="">— No customer —</option>
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] text-gray-500 uppercase tracking-wide">Linked Invoice</label>
+              <select
+                value={form.invoiceId}
+                onChange={(e) => setForm({ ...form, invoiceId: e.target.value })}
+                className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-200 focus:outline-none focus:border-brand [color-scheme:dark]"
+              >
+                <option value="">— No invoice —</option>
+                {productionInvoices.map((inv) => (
+                  <option key={inv.id} value={inv.id}>
+                    {inv.vendor_name}{inv.invoice_number ? ` · ${inv.invoice_number}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Line Items</div>
@@ -764,6 +803,8 @@ export default function PurchaseOrdersPage() {
                   <div><div className="text-[11px] text-gray-500 mb-1">STATUS</div><Badge color={getPOStatusColor(viewPO.status) as any}>{viewPO.status}</Badge></div>
                   <div><div className="text-[11px] text-gray-500 mb-1">CREATED</div><div className="text-[13px] text-gray-400">{fmtDate(viewPO.created_at)}</div></div>
                   <div><div className="text-[11px] text-gray-500 mb-1">EXPECTED</div><div className="text-[13px] text-gray-400">{fmtDate(viewPO.expected_date)}</div></div>
+                  {(viewPO as any).customer_id && (() => { const c = customers.find((x) => x.id === (viewPO as any).customer_id); return c ? <div><div className="text-[11px] text-gray-500 mb-1">CUSTOMER</div><div className="text-[13px] text-gray-200 font-semibold">{c.name}</div></div> : null; })()}
+                  {(viewPO as any).invoice_id && (() => { const inv = productionInvoices.find((x) => x.id === (viewPO as any).invoice_id); return inv ? <div><div className="text-[11px] text-gray-500 mb-1">INVOICE</div><div className="text-[13px] text-gray-400">{inv.vendor_name}{inv.invoice_number ? ` · ${inv.invoice_number}` : ""}</div></div> : null; })()}
                 </div>
                 {viewLoading ? (
                   <div className="text-center py-8 text-gray-500 text-sm">Loading line items...</div>
@@ -827,7 +868,7 @@ export default function PurchaseOrdersPage() {
         <Modal open={editModal} onClose={() => { setEditModal(false); setEditingPO(null); }} title={`Edit ${editingPO?.po_number || ""}`} className="w-[90vw] max-w-[1100px]">
           {editingPO && (
             <>
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-2 gap-4 mb-4">
                 <ComboBox
                   label="Supplier"
                   value={editForm.supplierId}
@@ -838,6 +879,34 @@ export default function PurchaseOrdersPage() {
                   createLabel="Create supplier"
                 />
                 <Input label="Expected Delivery" type="date" value={editForm.expectedDate} onChange={(e) => setEditForm({ ...editForm, expectedDate: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] text-gray-500 uppercase tracking-wide">Customer</label>
+                  <select
+                    value={editForm.customerId}
+                    onChange={(e) => setEditForm({ ...editForm, customerId: e.target.value })}
+                    className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-200 focus:outline-none focus:border-brand [color-scheme:dark]"
+                  >
+                    <option value="">— No customer —</option>
+                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] text-gray-500 uppercase tracking-wide">Linked Invoice</label>
+                  <select
+                    value={editForm.invoiceId}
+                    onChange={(e) => setEditForm({ ...editForm, invoiceId: e.target.value })}
+                    className="bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-200 focus:outline-none focus:border-brand [color-scheme:dark]"
+                  >
+                    <option value="">— No invoice —</option>
+                    {productionInvoices.map((inv) => (
+                      <option key={inv.id} value={inv.id}>
+                        {inv.vendor_name}{inv.invoice_number ? ` · ${inv.invoice_number}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Line Items</div>
               {editLineItems.map((item, i) => (
