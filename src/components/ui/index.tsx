@@ -90,8 +90,7 @@ export function Input({
       )}
       <input
         className={cn(
-          "bg-[#0B0F19] border border-border rounded-lg px-3.5 py-2.5 text-[13px] text-gray-200 outline-none focus:border-brand/50 transition-colors font-sans [color-scheme:dark]",
-          props.type === "date" ? "[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:cursor-pointer" : "",
+          "bg-[#0B0F19] border border-border rounded-lg px-3.5 py-2.5 text-[13px] text-gray-200 outline-none focus:border-brand/50 transition-colors font-sans",
           className
         )}
         {...props}

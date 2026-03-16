@@ -43,12 +43,8 @@ tr {
   transition: background-color 0.1s ease;
 }
 
-/* Date picker — force light icon on dark backgrounds */
-input[type="date"] {
-  color-scheme: dark !important;
-}
 input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) !important;
+  filter: invert(0.8) brightness(2) !important;
   cursor: pointer !important;
   opacity: 1 !important;
 }
