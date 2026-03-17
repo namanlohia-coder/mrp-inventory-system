@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
-import { getProducts, getCustomers, getMilestones, createMilestone, updateMilestone, deleteMilestone } from "@/lib/data";
+import { getProducts, getCustomers, getMilestones, createMilestone, updateMilestone, deleteMilestone, getSKUCatalog, getProductionInvoices, createProductionInvoice, createProductionPart } from "@/lib/data";
+import type { SKUItem } from "@/lib/data";
 import { Header } from "@/components/layout/Header";
 import { Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner, Textarea } from "@/components/ui";
 import { formatCurrency } from "@/lib/utils";
@@ -47,6 +48,31 @@ interface Milestone {
 
 type OrderStatus = "Planning" | "In Training" | "In Production" | "Ready" | "Delivered";
 type MilestoneStatus = "not_started" | "in_progress" | "complete" | "blocked";
+
+interface ParsedInvoiceHeader {
+  vendor_name: string;
+  invoice_number: string;
+  amount: string;
+  date: string;
+}
+
+interface ProductionInvoice {
+  id: string;
+  vendor_name: string;
+  invoice_number: string | null;
+  amount: number | null;
+  date: string | null;
+  production_order_id: string | null;
+  created_at: string;
+}
+
+interface ConfirmLineItem {
+  description: string;
+  quantity: string;
+  unit_price: string;
+  include: boolean;
+  matched: SKUItem | null;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -146,6 +172,19 @@ export default function ProductionOrdersPage() {
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
   const [milestoneForm, setMilestoneForm] = useState(emptyMilestoneForm);
 
+  // Invoice upload
+  const [productionInvoices, setProductionInvoices] = useState<ProductionInvoice[]>([]);
+  const invoiceFileRef = useRef<HTMLInputElement>(null);
+  const uploadTargetOrderIdRef = useRef<string | null>(null);
+  const [skuCatalog, setSkuCatalog] = useState<SKUItem[]>([]);
+  const [invoiceUploading, setInvoiceUploading] = useState(false);
+  const [uploadingOrderId, setUploadingOrderId] = useState<string | null>(null);
+  const [invoiceConfirmOpen, setInvoiceConfirmOpen] = useState(false);
+  const [confirmOrderId, setConfirmOrderId] = useState<string | null>(null);
+  const [confirmHeader, setConfirmHeader] = useState<ParsedInvoiceHeader>({ vendor_name: "", invoice_number: "", amount: "", date: "" });
+  const [confirmItems, setConfirmItems] = useState<ConfirmLineItem[]>([]);
+  const [savingInvoice, setSavingInvoice] = useState(false);
+
   // ─── Load functions ─────────────────────────────────────────────────────────
 
   const loadOrders = async () => {
@@ -173,7 +212,9 @@ export default function ProductionOrdersPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [prods, custs] = await Promise.all([getProducts(), getCustomers()]);
+        const [prods, custs, catalog, invoices] = await Promise.all([getProducts(), getCustomers(), getSKUCatalog(), getProductionInvoices()]);
+        setSkuCatalog(catalog);
+        setProductionInvoices(invoices as ProductionInvoice[]);
         setProducts(prods);
         setCustomers(custs);
         await Promise.all([loadOrders(), loadMilestones()]);
@@ -449,6 +490,118 @@ export default function ProductionOrdersPage() {
     }
   };
 
+  // ─── Invoice upload ──────────────────────────────────────────────────────────
+
+  const fuzzyMatchSKU = (partName: string): SKUItem | null => {
+    const lower = partName.toLowerCase().trim();
+    if (!lower) return null;
+    return (
+      skuCatalog.find(
+        (item) =>
+          lower.includes(item.part_name.toLowerCase()) ||
+          item.part_name.toLowerCase().includes(lower) ||
+          (item.sku && (lower.includes(item.sku.toLowerCase()) || item.sku.toLowerCase().includes(lower)))
+      ) ?? null
+    );
+  };
+
+  const handleInvoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (invoiceFileRef.current) invoiceFileRef.current.value = "";
+    if (!file) return;
+    if (file.type !== "application/pdf") return toast.error("Please select a PDF file");
+    if (file.size > 20 * 1024 * 1024) return toast.error("File must be under 20 MB");
+
+    const orderId = uploadTargetOrderIdRef.current;
+    if (!orderId) return;
+
+    setInvoiceUploading(true);
+    setUploadingOrderId(orderId);
+    const loadingToast = toast.loading("Parsing invoice…");
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/parse-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdfBase64: base64 }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to parse invoice");
+      }
+      const parsed = await res.json();
+
+      setConfirmOrderId(orderId);
+      setConfirmHeader({
+        vendor_name: parsed.vendor_name || "",
+        invoice_number: parsed.invoice_number || "",
+        amount: parsed.amount != null ? String(parsed.amount) : "",
+        date: parsed.date || "",
+      });
+      setConfirmItems(
+        (parsed.line_items || []).map((item: any) => ({
+          description: item.description || "",
+          quantity: item.quantity != null ? String(item.quantity) : "1",
+          unit_price: item.unit_price != null ? String(item.unit_price) : "",
+          include: true,
+          matched: fuzzyMatchSKU(item.description || ""),
+        }))
+      );
+      toast.dismiss(loadingToast);
+      setInvoiceConfirmOpen(true);
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err.message || "Failed to parse invoice");
+    } finally {
+      setInvoiceUploading(false);
+      setUploadingOrderId(null);
+      uploadTargetOrderIdRef.current = null;
+    }
+  };
+
+  const handleSaveInvoice = async () => {
+    if (!confirmOrderId) return;
+    setSavingInvoice(true);
+    try {
+      const invoice = await createProductionInvoice({
+        vendor_name: confirmHeader.vendor_name,
+        invoice_number: confirmHeader.invoice_number || undefined,
+        amount: confirmHeader.amount ? parseFloat(confirmHeader.amount) : undefined,
+        date: confirmHeader.date || null,
+        production_order_id: confirmOrderId,
+      });
+
+      const included = confirmItems.filter((it) => it.include);
+      await Promise.all(
+        included.map((item) =>
+          createProductionPart({
+            part_name: item.description,
+            qty_needed: parseFloat(item.quantity) || 1,
+            production_order_id: confirmOrderId,
+            source_invoice_id: invoice.id,
+            sku_catalog_id: item.matched?.id ?? null,
+            order_link: item.matched?.order_link ?? "",
+          })
+        )
+      );
+
+      toast.success(`Invoice saved — ${included.length} part${included.length !== 1 ? "s" : ""} added`);
+      setInvoiceConfirmOpen(false);
+      setConfirmOrderId(null);
+      getProductionInvoices().then((data) => setProductionInvoices(data as ProductionInvoice[]));
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save invoice");
+    } finally {
+      setSavingInvoice(false);
+    }
+  };
+
   const toggleOrderExpanded = (orderId: string) => {
     setExpandedOrders((prev) => ({
       ...prev,
@@ -581,6 +734,14 @@ export default function ProductionOrdersPage() {
     <>
       <Header lowStockCount={lowStockCount} />
       <main className="flex-1 overflow-auto p-8">
+        {/* Hidden invoice file input */}
+        <input
+          ref={invoiceFileRef}
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          onChange={handleInvoiceUpload}
+        />
 
         {/* Top controls */}
         <div className="flex justify-between items-center mb-4">
@@ -794,7 +955,7 @@ export default function ProductionOrdersPage() {
                     </div>
                   </div>
 
-                  {/* Expandable milestones section */}
+                  {/* Expandable milestones + invoices section */}
                   {isExpanded && (
                     <div className="border-t border-border">
                       <div className="flex items-center justify-between px-5 py-2.5 bg-surface-hover/30">
@@ -888,6 +1049,69 @@ export default function ProductionOrdersPage() {
                           })}
                         </div>
                       )}
+                      {/* Invoice upload section */}
+                      <div className="border-t border-border">
+                        <div className="flex items-center justify-between px-5 py-2.5 bg-surface-hover/30">
+                          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                            Invoice Parts
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={invoiceUploading && uploadingOrderId === order.id}
+                            onClick={() => {
+                              uploadTargetOrderIdRef.current = order.id;
+                              setUploadingOrderId(order.id);
+                              invoiceFileRef.current?.click();
+                            }}
+                          >
+                            {invoiceUploading && uploadingOrderId === order.id ? (
+                              <>
+                                <span className="inline-block w-3.5 h-3.5 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin mr-1.5" />
+                                Parsing…
+                              </>
+                            ) : (
+                              "📄 Upload Invoice PDF"
+                            )}
+                          </Button>
+                        </div>
+                        {(() => {
+                          const orderInvoices = productionInvoices.filter(
+                            (inv) => inv.production_order_id === order.id
+                          );
+                          if (orderInvoices.length === 0) return null;
+                          return (
+                            <div className="divide-y divide-border">
+                              {orderInvoices.map((inv) => (
+                                <div
+                                  key={inv.id}
+                                  className="flex items-center gap-4 px-5 py-2.5 text-[13px] hover:bg-surface-hover transition-colors"
+                                >
+                                  <span className="text-gray-400">📋</span>
+                                  <span className="text-gray-100 font-medium truncate flex-1">
+                                    {inv.vendor_name}
+                                  </span>
+                                  {inv.invoice_number && (
+                                    <span className="text-gray-500 text-[12px] shrink-0">
+                                      #{inv.invoice_number}
+                                    </span>
+                                  )}
+                                  {inv.amount != null && (
+                                    <span className="text-emerald-400 font-semibold text-[12px] shrink-0">
+                                      {formatCurrency(inv.amount)}
+                                    </span>
+                                  )}
+                                  {inv.date && (
+                                    <span className="text-gray-500 text-[12px] shrink-0">
+                                      {fmtDate(inv.date)}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1176,6 +1400,166 @@ export default function ProductionOrdersPage() {
           }
         >
           {renderMilestoneForm(milestoneForm, setMilestoneForm)}
+        </Modal>
+
+        {/* ── Modal: Invoice Confirmation ─────────────────────────────────────── */}
+        <Modal
+          open={invoiceConfirmOpen}
+          onClose={() => {
+            if (!savingInvoice) setInvoiceConfirmOpen(false);
+          }}
+          title="Confirm Invoice — Add Parts to Order"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setInvoiceConfirmOpen(false)}
+                disabled={savingInvoice}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSaveInvoice} disabled={savingInvoice}>
+                {savingInvoice ? "Saving…" : `Save Invoice & Add ${confirmItems.filter((i) => i.include).length} Part${confirmItems.filter((i) => i.include).length !== 1 ? "s" : ""}`}
+              </Button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-5">
+            {/* Header fields */}
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Vendor Name"
+                value={confirmHeader.vendor_name}
+                onChange={(e) => setConfirmHeader({ ...confirmHeader, vendor_name: e.target.value })}
+              />
+              <Input
+                label="Invoice Number"
+                value={confirmHeader.invoice_number}
+                onChange={(e) => setConfirmHeader({ ...confirmHeader, invoice_number: e.target.value })}
+              />
+              <Input
+                label="Amount ($)"
+                type="number"
+                min="0"
+                step="0.01"
+                value={confirmHeader.amount}
+                onChange={(e) => setConfirmHeader({ ...confirmHeader, amount: e.target.value })}
+              />
+              <Input
+                label="Date"
+                type="date"
+                value={confirmHeader.date}
+                onChange={(e) => setConfirmHeader({ ...confirmHeader, date: e.target.value })}
+              />
+            </div>
+
+            {/* Line items */}
+            <div>
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Line Items — {confirmItems.filter((i) => i.include).length} selected
+              </p>
+              {confirmItems.length === 0 ? (
+                <p className="text-[13px] text-gray-500 text-center py-4">No line items parsed.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wide border-b border-border">
+                        <th className="pb-2 pr-2 w-6"></th>
+                        <th className="pb-2 pr-3">Part Name</th>
+                        <th className="pb-2 pr-3 w-20 text-right">Qty</th>
+                        <th className="pb-2 pr-3 w-24 text-right">Unit Cost</th>
+                        <th className="pb-2">SKU Match</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {confirmItems.map((item, idx) => (
+                        <tr
+                          key={idx}
+                          className={`transition-colors ${item.include ? "hover:bg-surface-hover" : "opacity-40"}`}
+                        >
+                          <td className="py-2 pr-2">
+                            <input
+                              type="checkbox"
+                              checked={item.include}
+                              onChange={(e) =>
+                                setConfirmItems((prev) =>
+                                  prev.map((it, i) => (i === idx ? { ...it, include: e.target.checked } : it))
+                                )
+                              }
+                              className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-2 pr-3">
+                            <input
+                              value={item.description}
+                              onChange={(e) =>
+                                setConfirmItems((prev) =>
+                                  prev.map((it, i) =>
+                                    i === idx
+                                      ? { ...it, description: e.target.value, matched: fuzzyMatchSKU(e.target.value) }
+                                      : it
+                                  )
+                                )
+                              }
+                              className="w-full bg-transparent border border-border rounded px-2 py-1 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+                            />
+                          </td>
+                          <td className="py-2 pr-3">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                setConfirmItems((prev) =>
+                                  prev.map((it, i) => (i === idx ? { ...it, quantity: e.target.value } : it))
+                                )
+                              }
+                              className="w-full bg-transparent border border-border rounded px-2 py-1 text-[13px] text-gray-100 text-right focus:outline-none focus:border-brand"
+                            />
+                          </td>
+                          <td className="py-2 pr-3">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.unit_price}
+                              onChange={(e) =>
+                                setConfirmItems((prev) =>
+                                  prev.map((it, i) => (i === idx ? { ...it, unit_price: e.target.value } : it))
+                                )
+                              }
+                              className="w-full bg-transparent border border-border rounded px-2 py-1 text-[13px] text-gray-100 text-right focus:outline-none focus:border-brand"
+                            />
+                          </td>
+                          <td className="py-2">
+                            {item.matched ? (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                                  Matched
+                                </span>
+                                <span className="text-[11px] text-gray-400 truncate max-w-[160px]">
+                                  {item.matched.part_name}
+                                </span>
+                                <span className="text-[10px] text-gray-600">{item.matched.sku}</span>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                No match
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </Modal>
       </main>
     </>
