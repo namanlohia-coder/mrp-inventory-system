@@ -46,7 +46,7 @@ interface Milestone {
   created_at: string;
 }
 
-type OrderStatus = "Planning" | "In Training" | "In Production" | "Ready" | "Delivered";
+type OrderStatus = "planning" | "in_training" | "in_production" | "ready" | "delivered";
 type MilestoneStatus = "not_started" | "in_progress" | "complete" | "blocked";
 
 interface ParsedInvoiceHeader {
@@ -77,12 +77,20 @@ interface ConfirmLineItem {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
-  { value: "Planning", label: "Planning" },
-  { value: "In Training", label: "In Training" },
-  { value: "In Production", label: "In Production" },
-  { value: "Ready", label: "Ready" },
-  { value: "Delivered", label: "Delivered" },
+  { value: "planning", label: "Planning" },
+  { value: "in_training", label: "In Training" },
+  { value: "in_production", label: "In Production" },
+  { value: "ready", label: "Ready" },
+  { value: "delivered", label: "Delivered" },
 ];
+
+const STATUS_LABEL: Record<string, string> = {
+  planning: "Planning",
+  in_training: "In Training",
+  in_production: "In Production",
+  ready: "Ready",
+  delivered: "Delivered",
+};
 
 const STATUS_FILTER = [{ value: "all", label: "All Statuses" }, ...STATUS_OPTIONS];
 
@@ -101,7 +109,7 @@ const emptyOrderForm = {
   start_date: "",
   training_date: "",
   delivery_date: "",
-  status: "Planning" as OrderStatus,
+  status: "planning" as OrderStatus,
   notes: "",
 };
 
@@ -116,11 +124,11 @@ const emptyMilestoneForm = {
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
 function statusColor(s: OrderStatus): "default" | "blue" | "orange" | "green" | "red" {
-  if (s === "Planning") return "default";
-  if (s === "In Training") return "blue";
-  if (s === "In Production") return "orange";
-  if (s === "Ready") return "green";
-  if (s === "Delivered") return "green";
+  if (s === "planning") return "default";
+  if (s === "in_training") return "blue";
+  if (s === "in_production") return "orange";
+  if (s === "ready") return "green";
+  if (s === "delivered") return "green";
   return "default";
 }
 
@@ -323,7 +331,7 @@ export default function ProductionOrdersPage() {
   const shortages = (() => {
     const map = new Map<string, { product: any; needed: number; stock: number }>();
     for (const order of orders) {
-      if (order.status === "Delivered") continue;
+      if (order.status === "delivered") continue;
       for (const mat of order.production_order_materials || []) {
         const prod = mat.products;
         if (!prod) continue;
@@ -851,7 +859,7 @@ export default function ProductionOrdersPage() {
             <div>
               <div className="text-[11px] text-gray-500 uppercase tracking-wide">Active</div>
               <div className="text-[18px] font-bold text-blue-400">
-                {orders.filter((o) => o.status !== "Delivered").length}
+                {orders.filter((o) => o.status !== "delivered").length}
               </div>
             </div>
             <div>
@@ -921,7 +929,7 @@ export default function ProductionOrdersPage() {
               const nextM = orderMs.find((m) => m.status !== "complete" && m.due_date);
               const delivDays = daysFromNow(order.delivery_date);
               const trainDays = daysFromNow(order.training_date);
-              const isOverdue = delivDays !== null && delivDays < 0 && order.status !== "Delivered";
+              const isOverdue = delivDays !== null && delivDays < 0 && order.status !== "delivered";
               const isExpanded = expandedOrders[order.id] !== false; // default expanded
               const mats = order.production_order_materials || [];
               const hasShortage = mats.some(
@@ -942,7 +950,7 @@ export default function ProductionOrdersPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className="text-[14px] font-bold text-gray-100">{order.order_name}</span>
-                          <Badge color={statusColor(order.status)}>{order.status}</Badge>
+                          <Badge color={statusColor(order.status)}>{STATUS_LABEL[order.status] ?? order.status}</Badge>
                           {isOverdue && <Badge color="red">Overdue</Badge>}
                         </div>
                         <div className="flex items-center gap-4 mt-1 text-[12px] text-gray-500 flex-wrap">
