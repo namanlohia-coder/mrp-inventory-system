@@ -296,6 +296,9 @@ export default function ProductionOrdersPage() {
 
   // UI state
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [expandedInvoices, setExpandedInvoices] = useState<Record<string, boolean>>({});
+  const [invoiceParts, setInvoiceParts] = useState<Record<string, any[]>>({});
+  const [purchaseOrders, setPurchaseOrders] = useState<{ id: string; po_number: string }[]>([]);
   const [scheduleSearch, setScheduleSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
@@ -358,9 +361,13 @@ export default function ProductionOrdersPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [prods, custs, catalog, invoices] = await Promise.all([getProducts(), getCustomers(), getSKUCatalog(), getProductionInvoices()]);
+        const [prods, custs, catalog, invoices, pos] = await Promise.all([
+          getProducts(), getCustomers(), getSKUCatalog(), getProductionInvoices(),
+          supabase.from("purchase_orders").select("id, po_number").order("po_number"),
+        ]);
         setSkuCatalog(catalog);
         setProductionInvoices(invoices as ProductionInvoice[]);
+        setPurchaseOrders((pos.data || []) as { id: string; po_number: string }[]);
         setProducts(prods);
         setCustomers(custs);
         await Promise.all([loadOrders(), loadMilestones()]);
@@ -766,6 +773,28 @@ export default function ProductionOrdersPage() {
     } finally {
       setSavingInvoice(false);
     }
+  };
+
+  const toggleInvoice = async (invId: string) => {
+    const nowOpen = !expandedInvoices[invId];
+    setExpandedInvoices((prev) => ({ ...prev, [invId]: nowOpen }));
+    if (nowOpen && !invoiceParts[invId]) {
+      const { data } = await supabase
+        .from("production_parts_to_order")
+        .select("*, sku_catalog:sku_catalog_id(sku, part_name, supplier, order_link)")
+        .eq("source_invoice_id", invId)
+        .order("created_at");
+      setInvoiceParts((prev) => ({ ...prev, [invId]: data || [] }));
+    }
+  };
+
+  const refreshInvoiceParts = async (invId: string) => {
+    const { data } = await supabase
+      .from("production_parts_to_order")
+      .select("*, sku_catalog:sku_catalog_id(sku, part_name, supplier, order_link)")
+      .eq("source_invoice_id", invId)
+      .order("created_at");
+    setInvoiceParts((prev) => ({ ...prev, [invId]: data || [] }));
   };
 
   const toggleOrderExpanded = (orderId: string) => {
@@ -1251,50 +1280,182 @@ export default function ProductionOrdersPage() {
                           if (orderInvoices.length === 0) return null;
                           return (
                             <div className="divide-y divide-border">
-                              {orderInvoices.map((inv) => (
-                                <div
-                                  key={inv.id}
-                                  className="flex items-center gap-4 px-5 py-2.5 text-[13px] hover:bg-surface-hover transition-colors"
-                                >
-                                  <span className="text-gray-400">📋</span>
-                                  <span className="text-gray-100 font-medium truncate flex-1">
-                                    {inv.vendor_name}
-                                  </span>
-                                  {inv.invoice_number && (
-                                    <span className="text-gray-500 text-[12px] shrink-0">
-                                      #{inv.invoice_number}
-                                    </span>
-                                  )}
-                                  {inv.amount != null && (
-                                    <span className="text-emerald-400 font-semibold text-[12px] shrink-0">
-                                      {formatCurrency(inv.amount)}
-                                    </span>
-                                  )}
-                                  {inv.date && (
-                                    <span className="text-gray-500 text-[12px] shrink-0">
-                                      {fmtDate(inv.date)}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      if (!confirm(`Delete invoice "${inv.vendor_name}${inv.invoice_number ? ` #${inv.invoice_number}` : ""}"? Related parts will also be removed.`)) return;
-                                      try {
-                                        await supabase.from("production_parts_to_order").delete().eq("source_invoice_id", inv.id);
-                                        await supabase.from("production_invoices").delete().eq("id", inv.id);
-                                        toast.success("Invoice deleted");
-                                        getProductionInvoices().then((data) => setProductionInvoices(data as ProductionInvoice[]));
-                                      } catch (err: any) {
-                                        toast.error(err.message || "Failed to delete invoice");
-                                      }
-                                    }}
-                                    className="text-red-400/60 hover:text-red-400 text-[11px] shrink-0 cursor-pointer bg-transparent border-none ml-2"
-                                    title="Delete invoice"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
+                              {orderInvoices.map((inv) => {
+                                const isInvExpanded = !!expandedInvoices[inv.id];
+                                const parts = invoiceParts[inv.id] || [];
+                                return (
+                                  <div key={inv.id}>
+                                    {/* Invoice header row */}
+                                    <div
+                                      className="flex items-center gap-3 px-5 py-2.5 text-[13px] hover:bg-surface-hover transition-colors cursor-pointer"
+                                      onClick={() => toggleInvoice(inv.id)}
+                                    >
+                                      <span className="text-gray-500 text-[10px] shrink-0 w-3">
+                                        {isInvExpanded ? "▼" : "▶"}
+                                      </span>
+                                      <span className="text-gray-400 shrink-0">📋</span>
+                                      <span className="text-gray-100 font-medium truncate flex-1">
+                                        {inv.vendor_name}
+                                      </span>
+                                      {inv.invoice_number && (
+                                        <span className="text-gray-500 text-[12px] shrink-0">
+                                          #{inv.invoice_number}
+                                        </span>
+                                      )}
+                                      {inv.amount != null && (
+                                        <span className="text-emerald-400 font-semibold text-[12px] shrink-0">
+                                          {formatCurrency(inv.amount)}
+                                        </span>
+                                      )}
+                                      {inv.date && (
+                                        <span className="text-gray-500 text-[12px] shrink-0">
+                                          {fmtDate(inv.date)}
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (!confirm(`Delete invoice "${inv.vendor_name}${inv.invoice_number ? ` #${inv.invoice_number}` : ""}"? Related parts will also be removed.`)) return;
+                                          try {
+                                            await supabase.from("production_parts_to_order").delete().eq("source_invoice_id", inv.id);
+                                            await supabase.from("production_invoices").delete().eq("id", inv.id);
+                                            toast.success("Invoice deleted");
+                                            getProductionInvoices().then((data) => setProductionInvoices(data as ProductionInvoice[]));
+                                          } catch (err: any) {
+                                            toast.error(err.message || "Failed to delete invoice");
+                                          }
+                                        }}
+                                        className="text-red-400/60 hover:text-red-400 text-[11px] shrink-0 cursor-pointer bg-transparent border-none ml-2"
+                                        title="Delete invoice"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+
+                                    {/* Expanded parts sub-table */}
+                                    {isInvExpanded && (
+                                      <div className="bg-[#080c14] border-t border-border">
+                                        {parts.length === 0 ? (
+                                          <div className="px-10 py-3 text-[12px] text-gray-600">No parts linked to this invoice.</div>
+                                        ) : (
+                                          <table className="w-full text-[12px]">
+                                            <thead>
+                                              <tr className="text-left text-[10px] text-gray-600 uppercase tracking-wide border-b border-border">
+                                                <th className="px-5 py-2 pl-10">Part Name</th>
+                                                <th className="px-3 py-2">SKU</th>
+                                                <th className="px-3 py-2 text-right">Qty</th>
+                                                <th className="px-3 py-2">Supplier</th>
+                                                <th className="px-3 py-2">Order Link</th>
+                                                <th className="px-3 py-2">Ordered</th>
+                                                <th className="px-3 py-2">Received</th>
+                                                <th className="px-3 py-2">PO #</th>
+                                                <th className="px-3 py-2"></th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border/50">
+                                              {parts.map((part: any) => (
+                                                <tr
+                                                  key={part.id}
+                                                  className={`transition-colors ${
+                                                    part.is_received
+                                                      ? "bg-emerald-500/10"
+                                                      : part.is_ordered
+                                                      ? "bg-amber-500/10"
+                                                      : ""
+                                                  }`}
+                                                >
+                                                  <td className="px-5 py-2 pl-10 text-gray-200 font-medium">{part.part_name}</td>
+                                                  <td className="px-3 py-2 text-gray-500">{part.sku_catalog?.sku || "—"}</td>
+                                                  <td className="px-3 py-2 text-right text-gray-300">{part.quantity_needed}</td>
+                                                  <td className="px-3 py-2 text-gray-500">{part.sku_catalog?.supplier || "—"}</td>
+                                                  <td className="px-3 py-2">
+                                                    {part.sku_catalog?.order_link ? (
+                                                      <a
+                                                        href={part.sku_catalog.order_link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-brand hover:underline text-[11px]"
+                                                      >
+                                                        Order →
+                                                      </a>
+                                                    ) : (
+                                                      <span className="text-gray-600">—</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                    <select
+                                                      value={part.is_ordered ? "Yes" : "No"}
+                                                      onChange={async (e) => {
+                                                        const val = e.target.value === "Yes";
+                                                        await supabase.from("production_parts_to_order").update({ is_ordered: val }).eq("id", part.id);
+                                                        refreshInvoiceParts(inv.id);
+                                                      }}
+                                                      className={`text-[11px] rounded px-1.5 py-0.5 border-0 outline-none cursor-pointer font-semibold ${
+                                                        part.is_ordered
+                                                          ? "bg-emerald-500/20 text-emerald-400"
+                                                          : "bg-red-500/20 text-red-400"
+                                                      }`}
+                                                    >
+                                                      <option value="Yes">Yes</option>
+                                                      <option value="No">No</option>
+                                                    </select>
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                    <select
+                                                      value={part.is_received ? "Yes" : "No"}
+                                                      onChange={async (e) => {
+                                                        const val = e.target.value === "Yes";
+                                                        await supabase.from("production_parts_to_order").update({ is_received: val }).eq("id", part.id);
+                                                        refreshInvoiceParts(inv.id);
+                                                      }}
+                                                      className={`text-[11px] rounded px-1.5 py-0.5 border-0 outline-none cursor-pointer font-semibold ${
+                                                        part.is_received
+                                                          ? "bg-emerald-500/20 text-emerald-400"
+                                                          : "bg-red-500/20 text-red-400"
+                                                      }`}
+                                                    >
+                                                      <option value="Yes">Yes</option>
+                                                      <option value="No">No</option>
+                                                    </select>
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                    <select
+                                                      value={part.po_number || ""}
+                                                      onChange={async (e) => {
+                                                        await supabase.from("production_parts_to_order").update({ po_number: e.target.value || null }).eq("id", part.id);
+                                                        refreshInvoiceParts(inv.id);
+                                                      }}
+                                                      className="text-[11px] bg-transparent border border-border/50 rounded px-1.5 py-0.5 text-gray-300 outline-none cursor-pointer max-w-[100px]"
+                                                    >
+                                                      <option value="">— none —</option>
+                                                      {purchaseOrders.map((po) => (
+                                                        <option key={po.id} value={po.po_number}>{po.po_number}</option>
+                                                      ))}
+                                                    </select>
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                    <button
+                                                      onClick={async () => {
+                                                        if (!confirm(`Delete part "${part.part_name}"?`)) return;
+                                                        await supabase.from("production_parts_to_order").delete().eq("id", part.id);
+                                                        refreshInvoiceParts(inv.id);
+                                                      }}
+                                                      className="text-red-400/50 hover:text-red-400 cursor-pointer bg-transparent border-none"
+                                                      title="Delete part"
+                                                    >
+                                                      ✕
+                                                    </button>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })()}
