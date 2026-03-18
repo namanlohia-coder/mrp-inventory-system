@@ -92,6 +92,20 @@ const STATUS_LABEL: Record<string, string> = {
   delivered: "Delivered",
 };
 
+// Normalize old capitalized DB values to current lowercase constraint values
+const STATUS_NORMALIZE: Record<string, OrderStatus> = {
+  Planning: "planning",
+  "In Training": "in_training",
+  "In Production": "in_production",
+  Ready: "ready",
+  Delivered: "delivered",
+  planning: "planning",
+  in_training: "in_training",
+  in_production: "in_production",
+  ready: "ready",
+  delivered: "delivered",
+};
+
 const STATUS_FILTER = [{ value: "all", label: "All Statuses" }, ...STATUS_OPTIONS];
 
 const MILESTONE_STATUS_OPTIONS = [
@@ -368,7 +382,7 @@ export default function ProductionOrdersPage() {
   const customerOptions = customers.map((c: any) => ({ value: c.id, label: c.name }));
 
   const handleCreateCustomer = async (name: string): Promise<string> => {
-    const newCust = await createCustomer({ name });
+    const newCust = await createCustomer({ name, email: "", phone: "", address: "", notes: "" });
     setCustomers((prev: any[]) => [...prev, newCust].sort((a, b) => a.name.localeCompare(b.name)));
     toast.success(`Customer "${name}" created`);
     return newCust.id;
@@ -392,6 +406,18 @@ export default function ProductionOrdersPage() {
   const handleAddOrder = async () => {
     if (!orderForm.order_name.trim()) return toast.error("Order name is required");
     try {
+      const insertPayload = {
+        order_name: orderForm.order_name.trim(),
+        description: orderForm.description,
+        customer_id: orderForm.customer_id || null,
+        quantity: parseInt(orderForm.quantity) || 1,
+        start_date: orderForm.start_date || null,
+        training_date: orderForm.training_date || null,
+        delivery_date: orderForm.delivery_date || null,
+        status: orderForm.status,
+        notes: orderForm.notes,
+      };
+      console.log("[DEBUG] production_orders insert payload:", insertPayload);
       const { error } = await supabase.from("production_orders").insert({
         order_name: orderForm.order_name.trim(),
         description: orderForm.description,
@@ -423,7 +449,7 @@ export default function ProductionOrdersPage() {
       start_date: order.start_date || "",
       training_date: order.training_date || "",
       delivery_date: order.delivery_date || "",
-      status: order.status,
+      status: STATUS_NORMALIZE[order.status] ?? "planning",
       notes: order.notes || "",
     });
     setEditOrderModal(true);
