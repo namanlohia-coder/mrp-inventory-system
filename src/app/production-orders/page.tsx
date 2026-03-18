@@ -185,7 +185,7 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
     ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
     : options;
   const exactMatch = options.some((o) => o.label.toLowerCase() === search.toLowerCase());
-  const showCreate = !!search.trim() && !exactMatch;
+  const showCreate = !exactMatch;
 
   // Track client-side mount to safely use createPortal
   useEffect(() => { setMounted(true); }, []);
@@ -217,7 +217,8 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   };
 
   const handleCreate = async () => {
-    if (!search.trim() || creating) return;
+    if (creating) return;
+    if (!search.trim()) { inputRef.current?.focus(); return; }
     setCreating(true);
     try {
       const newId = await onCreateNew(search.trim());
@@ -254,7 +255,7 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
           onMouseDown={(e) => { e.preventDefault(); handleCreate(); }}
           className="px-3 py-2 text-[13px] cursor-pointer hover:bg-brand/10 text-brand border-t border-border font-medium"
         >
-          {creating ? "Creating..." : `+ ${createLabel || "Create"} "${search.trim()}"`}
+          {creating ? "Creating..." : search.trim() ? `+ ${createLabel || "Create"} "${search.trim()}"` : `+ ${createLabel || "Create new"}`}
         </div>
       )}
     </div>
@@ -743,7 +744,7 @@ export default function ProductionOrdersPage() {
         included.map((item) =>
           createProductionPart({
             part_name: item.description,
-            qty_needed: parseFloat(item.quantity) || 1,
+            quantity_needed: parseFloat(item.quantity) || 1,
             production_order_id: confirmOrderId,
             source_invoice_id: invoice.id,
             sku_catalog_id: item.matched?.id ?? null,

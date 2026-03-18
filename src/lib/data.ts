@@ -1006,7 +1006,7 @@ export async function getProductionParts() {
 export async function createProductionPart(part: {
   part_name: string;
   product_id?: string | null;
-  qty_needed: number;
+  quantity_needed: number;
   production_order_id?: string | null;
   po_number?: string;
   notes?: string;
