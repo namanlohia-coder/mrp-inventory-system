@@ -518,6 +518,10 @@ export default function ProductionOrdersPage() {
   const handleDeleteOrder = async (order: ProductionOrder) => {
     if (!confirm(`Delete "${order.order_name}"? This cannot be undone.`)) return;
     try {
+      await supabase.from("production_milestones").delete().eq("production_order_id", order.id);
+      await supabase.from("production_parts_to_order").delete().eq("production_order_id", order.id);
+      await supabase.from("production_invoices").delete().eq("production_order_id", order.id);
+      await supabase.from("production_order_materials").delete().eq("production_order_id", order.id);
       const { error } = await supabase.from("production_orders").delete().eq("id", order.id);
       if (error) throw error;
       toast.success("Order deleted");

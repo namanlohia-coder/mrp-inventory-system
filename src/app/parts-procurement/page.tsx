@@ -35,7 +35,7 @@ interface ProductionPart {
   id: string;
   part_name: string;
   product_id: string | null;
-  qty_needed: number;
+  quantity_needed: number;
   production_order_id: string | null;
   is_ordered: boolean;
   is_received: boolean;
@@ -495,7 +495,7 @@ export default function PartsProcurementPage() {
         const matchedItem = skuId ? skuCatalog.find((s) => s.id === skuId) : null;
         await createProductionPart({
           part_name: li.description,
-          qty_needed: li.quantity || 1,
+          quantity_needed: li.quantity || 1,
           production_order_id: invoiceForm.production_order_id || null,
           source_invoice_id: invoice?.id || null,
           sku_catalog_id: skuId,
@@ -526,7 +526,7 @@ export default function PartsProcurementPage() {
       await createProductionPart({
         part_name: partForm.part_name.trim(),
         product_id: partForm.product_id || null,
-        qty_needed: parseFloat(partForm.qty_needed) || 1,
+        quantity_needed: parseFloat(partForm.qty_needed) || 1,
         production_order_id: partForm.production_order_id || null,
         po_number: partForm.po_number,
         notes: partForm.notes,
@@ -549,7 +549,7 @@ export default function PartsProcurementPage() {
       await updateProductionPart(selectedPart.id, {
         part_name: partForm.part_name.trim(),
         product_id: partForm.product_id || null,
-        qty_needed: parseFloat(partForm.qty_needed) || 1,
+        quantity_needed: parseFloat(partForm.qty_needed) || 1,
         production_order_id: partForm.production_order_id || null,
         po_number: partForm.po_number,
         notes: partForm.notes,
@@ -1186,7 +1186,7 @@ export default function PartsProcurementPage() {
                           {sku || <span className="text-gray-600">—</span>}
                         </td>
                         <td className="px-4 py-3.5 text-[13px] text-gray-300 font-semibold">
-                          {part.qty_needed}
+                          {part.quantity_needed}
                         </td>
                         <td className="px-4 py-3.5 text-[13px] text-gray-400">
                           {supplier || <span className="text-gray-600">—</span>}
@@ -1247,7 +1247,7 @@ export default function PartsProcurementPage() {
                                 setPartForm({
                                   part_name: part.part_name,
                                   product_id: part.product_id || "",
-                                  qty_needed: String(part.qty_needed),
+                                  qty_needed: String(part.quantity_needed),
                                   production_order_id:
                                     part.production_order_id || "",
                                   po_number: part.po_number || "",
