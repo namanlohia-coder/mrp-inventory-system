@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
-import { getProducts, getCustomers, getMilestones, createMilestone, updateMilestone, deleteMilestone, getSKUCatalog, getProductionInvoices, createProductionInvoice, createProductionPart } from "@/lib/data";
+import { getProducts, getCustomers, getMilestones, createMilestone, updateMilestone, deleteMilestone, getSKUCatalog, getProductionInvoices, createProductionInvoice, createProductionPart, createCustomer } from "@/lib/data";
 import type { SKUItem } from "@/lib/data";
 import { Header } from "@/components/layout/Header";
 import { Button, Badge, Modal, Input, Select, EmptyState, LoadingSpinner, Textarea } from "@/components/ui";
@@ -138,6 +138,97 @@ function daysFromNow(dateStr: string | null): number | null {
   return Math.round((new Date(dateStr + "T00:00:00").getTime() - today.getTime()) / 86400000);
 }
 
+// ─── ComboBox ─────────────────────────────────────────────────────────────────
+
+function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, createLabel }: {
+  label?: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  onCreateNew: (name: string) => Promise<string>;
+  placeholder?: string;
+  createLabel?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value);
+  const shownLabel = current?.label || "";
+  const filtered = search
+    ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
+    : options;
+  const exactMatch = options.some((o) => o.label.toLowerCase() === search.toLowerCase());
+  const showCreate = search.trim() && !exactMatch;
+
+  useEffect(() => {
+    if (!open) setSearch("");
+  }, [value, open]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleCreate = async () => {
+    if (!search.trim() || creating) return;
+    setCreating(true);
+    try {
+      const newId = await onCreateNew(search.trim());
+      onChange(newId);
+      setSearch("");
+      setOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      {label && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">{label}</label>}
+      <input
+        type="text"
+        value={open ? search : shownLabel}
+        onChange={(e) => { setSearch(e.target.value); if (!open) setOpen(true); }}
+        onFocus={() => { setOpen(true); setSearch(shownLabel); }}
+        placeholder={placeholder || "Search or type to create..."}
+        className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+      />
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-surface-card border border-border rounded-lg shadow-xl max-h-[240px] overflow-y-auto">
+          {filtered.slice(0, 50).map((opt) => (
+            <div
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setSearch(""); setOpen(false); }}
+              className={`px-3 py-2 text-[13px] cursor-pointer hover:bg-surface-hover transition-colors ${
+                opt.value === value ? "text-brand font-medium" : "text-gray-300"
+              }`}
+            >
+              {opt.label}
+            </div>
+          ))}
+          {filtered.length === 0 && !showCreate && (
+            <div className="px-3 py-2 text-[12px] text-gray-500">No matches found</div>
+          )}
+          {showCreate && (
+            <div
+              onClick={handleCreate}
+              className="px-3 py-2 text-[13px] cursor-pointer hover:bg-brand/10 text-brand border-t border-border font-medium"
+            >
+              {creating ? "Creating..." : `+ ${createLabel || "Create"} "${search.trim()}"`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page Component ───────────────────────────────────────────────────────────
 
 export default function ProductionOrdersPage() {
@@ -266,10 +357,14 @@ export default function ProductionOrdersPage() {
         })
       : "—";
 
-  const customerOptions = [
-    { value: "", label: "No customer" },
-    ...customers.map((c: any) => ({ value: c.id, label: c.name })),
-  ];
+  const customerOptions = customers.map((c: any) => ({ value: c.id, label: c.name }));
+
+  const handleCreateCustomer = async (name: string): Promise<string> => {
+    const newCust = await createCustomer({ name });
+    setCustomers((prev: any[]) => [...prev, newCust].sort((a, b) => a.name.localeCompare(b.name)));
+    toast.success(`Customer "${name}" created`);
+    return newCust.id;
+  };
 
   const orderOptions = [
     { value: "", label: "No production order" },
@@ -631,11 +726,14 @@ export default function ProductionOrdersPage() {
           onChange={(e) => setForm({ ...form, description: e.target.value })}
         />
       </div>
-      <Select
+      <ComboBox
         label="Customer"
         value={form.customer_id}
-        onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+        onChange={(id) => setForm({ ...form, customer_id: id })}
         options={customerOptions}
+        onCreateNew={handleCreateCustomer}
+        placeholder="Search customers..."
+        createLabel="Create customer"
       />
       <Input
         label="Quantity"
