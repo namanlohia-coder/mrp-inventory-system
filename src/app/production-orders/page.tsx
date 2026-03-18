@@ -1275,6 +1275,24 @@ export default function ProductionOrdersPage() {
                                       {fmtDate(inv.date)}
                                     </span>
                                   )}
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!confirm(`Delete invoice "${inv.vendor_name}${inv.invoice_number ? ` #${inv.invoice_number}` : ""}"? Related parts will also be removed.`)) return;
+                                      try {
+                                        await supabase.from("production_parts_to_order").delete().eq("source_invoice_id", inv.id);
+                                        await supabase.from("production_invoices").delete().eq("id", inv.id);
+                                        toast.success("Invoice deleted");
+                                        getProductionInvoices().then((data) => setProductionInvoices(data as ProductionInvoice[]));
+                                      } catch (err: any) {
+                                        toast.error(err.message || "Failed to delete invoice");
+                                      }
+                                    }}
+                                    className="text-red-400/60 hover:text-red-400 text-[11px] shrink-0 cursor-pointer bg-transparent border-none ml-2"
+                                    title="Delete invoice"
+                                  >
+                                    ✕
+                                  </button>
                                 </div>
                               ))}
                             </div>
