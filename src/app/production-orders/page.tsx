@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
 import { getProducts, getCustomers, getMilestones, createMilestone, updateMilestone, deleteMilestone, getSKUCatalog, getProductionInvoices, createProductionInvoice, createProductionPart, createCustomer } from "@/lib/data";
@@ -174,8 +175,8 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [mounted, setMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const current = options.find((o) => o.value === value);
@@ -186,26 +187,34 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   const exactMatch = options.some((o) => o.label.toLowerCase() === search.toLowerCase());
   const showCreate = !!search.trim() && !exactMatch;
 
-  // Position the dropdown using fixed coords so it escapes overflow:auto modal containers
-  const openDropdown = () => {
-    if (inputRef.current) {
-      const r = inputRef.current.getBoundingClientRect();
-      setDropdownStyle({ top: r.bottom + 4, left: r.left, width: r.width });
-    }
-    setOpen(true);
-  };
+  // Track client-side mount to safely use createPortal
+  useEffect(() => { setMounted(true); }, []);
 
+  // Close on outside click; re-measure on scroll/resize while open
   useEffect(() => {
-    if (!open) setSearch("");
+    if (!open) { setSearch(""); return; }
+    const close = (e: MouseEvent) => {
+      if (inputRef.current && !inputRef.current.closest("div")?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const reposition = () => {
+      if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+    };
+    document.addEventListener("mousedown", close);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
   }, [open]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const openDropdown = () => {
+    if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+    setOpen(true);
+  };
 
   const handleCreate = async () => {
     if (!search.trim() || creating) return;
@@ -221,48 +230,56 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
     }
   };
 
-  return (
-    <div ref={wrapRef}>
-      {label && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">{label}</label>}
-      <input
-        ref={inputRef}
-        type="text"
-        value={open ? search : shownLabel}
-        onChange={(e) => { setSearch(e.target.value); if (!open) openDropdown(); }}
-        onFocus={() => { setSearch(""); openDropdown(); }}
-        placeholder={placeholder || "Search or type to create..."}
-        className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
-      />
-      {open && (
+  const dropdown = open && rect && (
+    <div
+      style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, width: rect.width, zIndex: 9999 }}
+      className="bg-[#131929] border border-border rounded-lg shadow-2xl max-h-[240px] overflow-y-auto"
+    >
+      {filtered.length === 0 && !showCreate && (
+        <div className="px-3 py-2 text-[12px] text-gray-500">No matches found</div>
+      )}
+      {filtered.slice(0, 50).map((opt) => (
         <div
-          style={dropdownStyle}
-          className="fixed z-[9999] bg-surface-card border border-border rounded-lg shadow-xl max-h-[240px] overflow-y-auto"
+          key={opt.value}
+          onMouseDown={(e) => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
+          className={`px-3 py-2 text-[13px] cursor-pointer hover:bg-surface-hover transition-colors ${
+            opt.value === value ? "text-brand font-medium" : "text-gray-300"
+          }`}
         >
-          {filtered.slice(0, 50).map((opt) => (
-            <div
-              key={opt.value}
-              onMouseDown={(e) => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
-              className={`px-3 py-2 text-[13px] cursor-pointer hover:bg-surface-hover transition-colors ${
-                opt.value === value ? "text-brand font-medium" : "text-gray-300"
-              }`}
-            >
-              {opt.label}
-            </div>
-          ))}
-          {filtered.length === 0 && !showCreate && (
-            <div className="px-3 py-2 text-[12px] text-gray-500">No matches found</div>
-          )}
-          {showCreate && (
-            <div
-              onMouseDown={(e) => { e.preventDefault(); handleCreate(); }}
-              className="px-3 py-2 text-[13px] cursor-pointer hover:bg-brand/10 text-brand border-t border-border font-medium"
-            >
-              {creating ? "Creating..." : `+ ${createLabel || "Create"} "${search.trim()}"`}
-            </div>
-          )}
+          {opt.label}
+        </div>
+      ))}
+      {showCreate && (
+        <div
+          onMouseDown={(e) => { e.preventDefault(); handleCreate(); }}
+          className="px-3 py-2 text-[13px] cursor-pointer hover:bg-brand/10 text-brand border-t border-border font-medium"
+        >
+          {creating ? "Creating..." : `+ ${createLabel || "Create"} "${search.trim()}"`}
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      <div>
+        {label && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">{label}</label>}
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            autoComplete="off"
+            value={open ? search : shownLabel}
+            onChange={(e) => { setSearch(e.target.value); if (!open) openDropdown(); }}
+            onFocus={openDropdown}
+            placeholder={placeholder || "Search or type to create..."}
+            className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 pr-7 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
+          />
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-[10px]">▾</span>
+        </div>
+      </div>
+      {mounted && createPortal(dropdown, document.body)}
+    </>
   );
 }
 
