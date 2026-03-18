@@ -174,22 +174,34 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const current = options.find((o) => o.value === value);
   const shownLabel = current?.label || "";
   const filtered = search
     ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
     : options;
   const exactMatch = options.some((o) => o.label.toLowerCase() === search.toLowerCase());
-  const showCreate = search.trim() && !exactMatch;
+  const showCreate = !!search.trim() && !exactMatch;
+
+  // Position the dropdown using fixed coords so it escapes overflow:auto modal containers
+  const openDropdown = () => {
+    if (inputRef.current) {
+      const r = inputRef.current.getBoundingClientRect();
+      setDropdownStyle({ top: r.bottom + 4, left: r.left, width: r.width });
+    }
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) setSearch("");
-  }, [value, open]);
+  }, [open]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -201,7 +213,6 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
     try {
       const newId = await onCreateNew(search.trim());
       onChange(newId);
-      setSearch("");
       setOpen(false);
     } catch (err: any) {
       toast.error(err.message || "Failed to create");
@@ -211,22 +222,26 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={wrapRef}>
       {label && <label className="text-[11px] text-gray-500 uppercase tracking-wide block mb-1">{label}</label>}
       <input
+        ref={inputRef}
         type="text"
         value={open ? search : shownLabel}
-        onChange={(e) => { setSearch(e.target.value); if (!open) setOpen(true); }}
-        onFocus={() => { setOpen(true); setSearch(shownLabel); }}
+        onChange={(e) => { setSearch(e.target.value); if (!open) openDropdown(); }}
+        onFocus={() => { setSearch(""); openDropdown(); }}
         placeholder={placeholder || "Search or type to create..."}
         className="w-full bg-[#0B0F19] border border-border rounded-lg px-3 py-1.5 text-[13px] text-gray-100 focus:outline-none focus:border-brand"
       />
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-surface-card border border-border rounded-lg shadow-xl max-h-[240px] overflow-y-auto">
+        <div
+          style={dropdownStyle}
+          className="fixed z-[9999] bg-surface-card border border-border rounded-lg shadow-xl max-h-[240px] overflow-y-auto"
+        >
           {filtered.slice(0, 50).map((opt) => (
             <div
               key={opt.value}
-              onClick={() => { onChange(opt.value); setSearch(""); setOpen(false); }}
+              onMouseDown={(e) => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
               className={`px-3 py-2 text-[13px] cursor-pointer hover:bg-surface-hover transition-colors ${
                 opt.value === value ? "text-brand font-medium" : "text-gray-300"
               }`}
@@ -239,7 +254,7 @@ function ComboBox({ label, value, onChange, options, onCreateNew, placeholder, c
           )}
           {showCreate && (
             <div
-              onClick={handleCreate}
+              onMouseDown={(e) => { e.preventDefault(); handleCreate(); }}
               className="px-3 py-2 text-[13px] cursor-pointer hover:bg-brand/10 text-brand border-t border-border font-medium"
             >
               {creating ? "Creating..." : `+ ${createLabel || "Create"} "${search.trim()}"`}
