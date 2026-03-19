@@ -1367,20 +1367,40 @@ export default function ProductionOrdersPage() {
                                                   <td className="px-5 py-2 pl-10 text-gray-200 font-medium">{part.part_name}</td>
                                                   <td className="px-3 py-2 text-gray-500">{part.sku_catalog?.sku || "—"}</td>
                                                   <td className="px-3 py-2 text-right text-gray-300">{part.quantity_needed}</td>
-                                                  <td className="px-3 py-2 text-gray-500">{part.sku_catalog?.supplier || "—"}</td>
                                                   <td className="px-3 py-2">
-                                                    {part.sku_catalog?.order_link ? (
-                                                      <a
-                                                        href={part.sku_catalog.order_link}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-brand hover:underline text-[11px]"
-                                                      >
-                                                        Order →
-                                                      </a>
-                                                    ) : (
-                                                      <span className="text-gray-600">—</span>
-                                                    )}
+                                                    <input
+                                                      key={part.id + "-supplier"}
+                                                      defaultValue={part.supplier || part.sku_catalog?.supplier || ""}
+                                                      onBlur={async (e) => {
+                                                        await supabase.from("production_parts_to_order").update({ supplier: e.target.value }).eq("id", part.id);
+                                                      }}
+                                                      className="w-full bg-transparent border border-transparent hover:border-border focus:border-brand rounded px-1.5 py-0.5 text-[11px] text-gray-300 outline-none min-w-[80px]"
+                                                      placeholder="—"
+                                                    />
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                    <div className="flex items-center gap-1">
+                                                      <input
+                                                        key={part.id + "-link"}
+                                                        defaultValue={part.order_link || part.sku_catalog?.order_link || ""}
+                                                        onBlur={async (e) => {
+                                                          await supabase.from("production_parts_to_order").update({ order_link: e.target.value }).eq("id", part.id);
+                                                        }}
+                                                        className="w-full bg-transparent border border-transparent hover:border-border focus:border-brand rounded px-1.5 py-0.5 text-[11px] text-gray-300 outline-none min-w-[80px]"
+                                                        placeholder="—"
+                                                      />
+                                                      {(part.order_link || part.sku_catalog?.order_link) && (
+                                                        <a
+                                                          href={part.order_link || part.sku_catalog?.order_link}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          className="text-brand hover:text-brand/70 text-[11px] shrink-0"
+                                                          title="Open link"
+                                                        >
+                                                          →
+                                                        </a>
+                                                      )}
+                                                    </div>
                                                   </td>
                                                   <td className="px-3 py-2">
                                                     <select
@@ -1390,6 +1410,7 @@ export default function ProductionOrdersPage() {
                                                         await supabase.from("production_parts_to_order").update({ is_ordered: val }).eq("id", part.id);
                                                         refreshInvoiceParts(inv.id);
                                                       }}
+                                                      style={{ colorScheme: "light" }}
                                                       className={`text-[11px] rounded px-1.5 py-0.5 border-0 outline-none cursor-pointer font-semibold ${
                                                         part.is_ordered
                                                           ? "bg-emerald-500/20 text-emerald-400"
@@ -1408,6 +1429,7 @@ export default function ProductionOrdersPage() {
                                                         await supabase.from("production_parts_to_order").update({ is_received: val }).eq("id", part.id);
                                                         refreshInvoiceParts(inv.id);
                                                       }}
+                                                      style={{ colorScheme: "light" }}
                                                       className={`text-[11px] rounded px-1.5 py-0.5 border-0 outline-none cursor-pointer font-semibold ${
                                                         part.is_received
                                                           ? "bg-emerald-500/20 text-emerald-400"
@@ -1425,6 +1447,7 @@ export default function ProductionOrdersPage() {
                                                         await supabase.from("production_parts_to_order").update({ po_number: e.target.value || null }).eq("id", part.id);
                                                         refreshInvoiceParts(inv.id);
                                                       }}
+                                                      style={{ colorScheme: "light" }}
                                                       className="text-[11px] bg-transparent border border-border/50 rounded px-1.5 py-0.5 text-gray-300 outline-none cursor-pointer max-w-[100px]"
                                                     >
                                                       <option value="">— none —</option>
