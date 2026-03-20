@@ -1424,7 +1424,7 @@ export default function ProductionOrdersPage() {
                                                       ) : (
                                                         <button
                                                           onClick={async () => {
-                                                            const val = prompt("Add order link URL:");
+                                                            const val = prompt("Add order link (URL):");
                                                             if (!val?.trim()) return;
                                                             await supabase.from("production_parts_to_order").update({ order_link: val.trim() }).eq("id", part.id);
                                                             refreshInvoiceParts(inv.id);
